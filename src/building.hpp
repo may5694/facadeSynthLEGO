@@ -24,7 +24,6 @@ private:
 
 	// Geometry buffers
 	std::vector<glm::vec3> posBuf;		// Positions
-	std::vector<glm::vec3> normBuf;		// Normals
 	std::vector<glm::vec2> tcBuf;		// Texture coordinates
 	std::vector<uint32_t> indexBuf;		// Triangle indices
 
@@ -39,6 +38,7 @@ private:
 
 	// Methods
 	void readManifest(fs::path metaPath, fs::path& modelPath, fs::path& texPath, fs::path& surfPath);
+	void readModel(fs::path modelPath);
 };
 
 // Holds information about a facade
