@@ -4,24 +4,27 @@
 #include <iomanip>
 #include <set>
 #include <experimental/filesystem>
+#include "building.hpp"
 using namespace std;
 namespace fs = experimental::filesystem;
 
-set<string> getClusters(int argc, char** argv, fs::path clusterDir);
+// Global directories
+fs::path rootDir("lego_root");
+fs::path clusterDir = rootDir / "01700_MODELING" / "BuildingClusters";
+
+// Functions
+set<string> getClusters(int argc, char** argv);
+void genFacadeModel(string cluster);
 
 int main(int argc, char** argv) {
 	try {
-		// Get directories
-		fs::path rootDir("lego_root");
-		fs::path clusterDir = rootDir / "01700_MODELING" / "BuildingClusters";
-
 		// Get clusters from cmd args
-		set<string> clusters = getClusters(argc, argv, clusterDir);
+		set<string> clusters = getClusters(argc, argv);
 
-		// Print clusters
-		for (auto cluster : clusters)
-			cout << cluster << " ";
-		cout << endl;
+		// Process each cluster
+		for (auto cluster : clusters) {
+			genFacadeModel(cluster);
+		}
 
 	} catch (const exception& e) {
 		cerr << e.what() << endl;
@@ -33,7 +36,7 @@ int main(int argc, char** argv) {
 
 
 // Get clusters from cmd args
-set<string> getClusters(int argc, char** argv, fs::path clusterDir) {
+set<string> getClusters(int argc, char** argv) {
 	set<string> clusters;
 	if (argc > 1) {
 		for (int c = 1; c < argc; c++) {
@@ -69,4 +72,15 @@ set<string> getClusters(int argc, char** argv, fs::path clusterDir) {
 		throw runtime_error("No clusters found!");
 
 	return clusters;
+}
+
+// Generate synthetic facades for the given cluster
+void genFacadeModel(string cluster) {
+	// Get path to manifest file
+	fs::path metaPath = clusterDir / cluster / "Output" /
+		("building_cluster_" + cluster + "__TexturedModelMetadata.json");
+
+	// Load the building data
+	Building b;
+	b.load(metaPath);
 }

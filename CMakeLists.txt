@@ -14,7 +14,7 @@ find_package(GDAL REQUIRED)
 set(SOURCES
 	src/main.cpp
 #	src/satellite.cpp
-#	src/building.cpp
+	src/building.cpp
 	src/dn_predict.cpp
 #	src/util.cpp
 #	src/openglcontext.cpp

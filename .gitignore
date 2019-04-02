@@ -2,3 +2,4 @@ build/
 lego_root/
 .lego_root.backup/
 facadeSynthLEGO
+*.swp
