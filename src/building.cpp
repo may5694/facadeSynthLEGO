@@ -146,9 +146,13 @@ void Building::readSurfaces(fs::path surfPath) {
 		// Get spatial extents
 		glm::vec2 minBB_uv(FLT_MAX), maxBB_uv(-FLT_MAX);
 		fa.zBB_utm = glm::vec2(FLT_MAX, -FLT_MAX);
+		float wt = 0.0;
+		glm::vec3 avgNorm(0.0);
 		for (auto f : fa.faceIDs) {
+			vector<glm::vec3> verts;
 			for (int v = 0; v < 3; v++) {
 				glm::vec3 p = posBuf[indexBuf[3 * f + v]];
+				verts.push_back(p);
 				fa.zBB_utm.x = glm::min(fa.zBB_utm.x, p.z);
 				fa.zBB_utm.y = glm::max(fa.zBB_utm.y, p.z);
 
@@ -156,7 +160,19 @@ void Building::readSurfaces(fs::path surfPath) {
 				minBB_uv = glm::min(minBB_uv, t);
 				maxBB_uv = glm::max(maxBB_uv, t);
 			}
+
+			// Get normal weighted by area
+			glm::vec3 e1 = verts[1] - verts[0];
+			glm::vec3 e2 = verts[2] - verts[0];
+			glm::vec3 n = glm::normalize(glm::cross(e1, e2));
+			float w = glm::length(glm::cross(e1, e2));
+			avgNorm += n * w;
+			wt += w;
 		}
+		// Get average normal
+		fa.normal = glm::normalize(avgNorm / wt);
+		fa.ground = (fa.zBB_utm.x - minBB_utm.z < 1e-3);
+		fa.roof = (glm::dot(fa.normal, { 0.0, 0.0, 1.0 }) > 0.707f);
 
 		// Get atlas UV bounding box
 		fa.atlasBB_uv.x = minBB_uv.x;
@@ -170,6 +186,33 @@ void Building::readSurfaces(fs::path surfPath) {
 		fa.atlasBB_px.height = ceil(fa.atlasBB_uv.height * atlasImg.rows);
 		// Get ROI of facade from atlas image
 		fa.facadeImg = atlasImg(fa.atlasBB_px);
+
+		// Get orientation matrix
+		fa.rectXform = glm::mat4(1.0);
+		if (glm::dot(fa.normal, { 0.0, 0.0, 1.0 }) < 1.0) {
+			glm::vec3 up(0.0, 0.0, 1.0);
+			glm::vec3 right = glm::normalize(glm::cross(up, fa.normal));
+			up = glm::normalize(glm::cross(fa.normal, right));
+
+			fa.rectXform[0] = glm::vec4(right, 0.0f);
+			fa.rectXform[1] = glm::vec4(up, 0.0f);
+			fa.rectXform[2] = glm::vec4(fa.normal, 0.0f);
+			fa.rectXform = glm::transpose(fa.rectXform);
+		}
+
+		// Get the rotated facade offset and size
+		glm::vec3 minBB_rutm(FLT_MAX);
+		fa.size_utm = glm::vec2(-FLT_MAX);
+		for (auto f : fa.faceIDs) {
+			for (int vi = 0; vi < 3; vi++) {
+				glm::vec3 v = posBuf[indexBuf[3 * f + vi]];
+				minBB_rutm = glm::min(minBB_rutm, glm::vec3(fa.rectXform * glm::vec4(v, 1.0)));
+				fa.size_utm = glm::max(fa.size_utm, glm::vec2(fa.rectXform * glm::vec4(v, 1.0)));
+			}
+		}
+		fa.size_utm -= glm::vec2(minBB_rutm);
+		fa.rectXform[3] = glm::vec4(-minBB_rutm, 1.0);
+		fa.iRectXform = glm::inverse(fa.rectXform);
 	}
 }
 

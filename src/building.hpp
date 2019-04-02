@@ -48,6 +48,7 @@ struct FacadeInfo {
 	cv::Mat facadeImg;			// Facade texture (ROI of Building::atlasImg)
 	cv::Rect atlasBB_px;		// Bounding rect of facade in atlas (px, ul origin)
 	cv::Rect2f atlasBB_uv;		// Bounding rect of facade in atlas (uv, ll origin)
+	glm::vec3 normal;			// Facing direction (UTM)
 	glm::vec2 size_utm;			// Width, height of rectified facade (rUTM)
 	glm::vec2 zBB_utm;			// Z bounds (UTM)
 	glm::mat4 rectXform;		// UTM -> rUTM transformation matrix
