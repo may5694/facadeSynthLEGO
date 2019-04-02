@@ -37,6 +37,67 @@ void Building::clear() {
 	*this = Building();
 }
 
+// Calculate a score for each facade
+void Building::scoreFacades() {
+	// Loop over all facades
+	for (auto& fi : facadeInfo) {
+		FacadeInfo& finfo = fi.second;
+
+		// Convert facade image to 32F
+		cv::Mat bgraImg;
+		finfo.facadeImg.convertTo(bgraImg, CV_32F, 1.0 / 255.0);
+
+		// Separate into BGR and A
+		cv::Mat bgrImg(bgraImg.size(), CV_32FC3), aImg(bgraImg.size(), CV_32FC1);
+		cv::mixChannels(vector<cv::Mat>{ bgraImg }, vector<cv::Mat>{ bgrImg, aImg },
+			{ 0, 0, 1, 1, 2, 2, 3, 3 });
+		cv::Mat aMask = (aImg > 0.5);
+
+		// Convert to HSV space
+		cv::Mat hsvImg;
+		cv::cvtColor(bgrImg, hsvImg, cv::COLOR_BGR2HSV);
+		cv::Mat hImg(hsvImg.size(), CV_32FC1), vImg(hsvImg.size(), CV_32FC1);
+		cv::mixChannels(vector<cv::Mat>{ hsvImg }, vector<cv::Mat>{ hImg, vImg },
+			{ 0, 0, 2, 1 });
+
+		cv::Size ks(7, 7);
+		// Calculate shadows
+		cv::Mat hShadow = hImg.clone();
+		hShadow.forEach<float>([](float& p, const int* position) -> void {
+			p = pow(cos((p / 360.0 - 0.6) * 2.0 * M_PI) * 0.5 + 0.5, 200.0);
+		});
+		cv::boxFilter(hShadow, hShadow, -1, ks);
+		cv::Mat vShadow = vImg.clone();
+		vShadow.forEach<float>([](float& p, const int* position) -> void {
+			p = pow(max(0.25 - p, 0.0) / 0.25, 0.5);
+		});
+		cv::boxFilter(vShadow, vShadow, -1, ks);
+		cv::Mat inShadow = hShadow.mul(vShadow).mul(aImg);
+
+		// Calculate brightness
+		cv::Mat vBright = vImg.clone();
+		vBright.forEach<float>([](float& p, const int* position) -> void {
+			p = min(p * 2.0, 1.0);
+		});
+		cv::boxFilter(vBright, vBright, -1, ks);
+
+		// Calculate score
+		float w1 = 0.35;		// Shadow
+		float w2 = 0.35;		// Brightness
+		float w3 = 0.30;		// Area
+		cv::Mat score = aImg.mul(w1 * (1.0 - inShadow) + w2 * vBright + w3);
+		finfo.score = cv::mean(score, aMask)[0];
+	}
+}
+
+// Estimate facade parameters for each facade
+void Building::estimParams() {
+}
+
+// Generate synthetic facade geometry and save it
+void Building::synthFacades() {
+}
+
 // Read textured model paths and cluster ID from metadata manifest
 void Building::readManifest(fs::path metaPath, fs::path& modelPath,
 	fs::path& texPath, fs::path& surfPath) {
@@ -130,6 +191,13 @@ void Building::readSurfaces(fs::path surfPath) {
 	surfFile.exceptions(ios::eofbit | ios::badbit | ios::failbit);
 	surfFile.open(surfPath);
 
+	bool debugFacades = false;
+	fs::path debugDir = fs::path("debug") / cluster;
+	if (debugFacades) {
+		if (!fs::exists(debugDir))
+			fs::create_directories(debugDir);
+	}
+
 	// Loop over all faces
 	for (size_t f = 0; f < indexBuf.size() / 3; f++) {
 		// Read the surface group this face belongs to
@@ -186,6 +254,13 @@ void Building::readSurfaces(fs::path surfPath) {
 		fa.atlasBB_px.height = ceil(fa.atlasBB_uv.height * atlasImg.rows);
 		// Get ROI of facade from atlas image
 		fa.facadeImg = atlasImg(fa.atlasBB_px);
+
+		if (debugFacades) {
+			stringstream ss;
+			ss << setw(4) << setfill('0') << fi.first;
+			fs::path debugPath = debugDir / (ss.str() + ".png");
+			cv::imwrite(debugPath.string(), fa.facadeImg);
+		}
 
 		// Get orientation matrix
 		fa.rectXform = glm::mat4(1.0);

@@ -83,4 +83,13 @@ void genFacadeModel(string cluster) {
 	// Load the building data
 	Building b;
 	b.load(metaPath);
+
+	// Score all facades
+	b.scoreFacades();
+
+	// Estimate facade params
+	b.estimParams();
+
+	// Create synthetic facades
+	b.synthFacades();
 }

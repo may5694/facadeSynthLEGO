@@ -16,6 +16,10 @@ public:
 	void load(fs::path metaPath);
 	void clear();
 
+	void scoreFacades();
+	void estimParams();
+	void synthFacades();
+
 private:
 	// Directories
 	fs::path metaDir;					// Metadata directory
