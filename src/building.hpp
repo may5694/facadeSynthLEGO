@@ -39,6 +39,7 @@ private:
 	// Methods
 	void readManifest(fs::path metaPath, fs::path& modelPath, fs::path& texPath, fs::path& surfPath);
 	void readModel(fs::path modelPath);
+	void readSurfaces(fs::path surfPath);
 };
 
 // Holds information about a facade

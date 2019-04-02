@@ -24,6 +24,12 @@ void Building::load(fs::path metaPath) {
 
 	// Load the geometry
 	readModel(modelPath);
+
+	// Load the texture atlas
+	atlasImg = cv::imread(texPath.string(), CV_LOAD_IMAGE_UNCHANGED);
+
+	// Read surface groupings
+	readSurfaces(surfPath);
 }
 
 void Building::clear() {
@@ -111,7 +117,59 @@ void Building::readModel(fs::path modelPath) {
 				minBB_utm = glm::min(minBB_utm, posBuf.back());
 				maxBB_utm = glm::max(maxBB_utm, posBuf.back());
 			}
+
+			idx_offset += fv;
 		}
+	}
+}
+
+// Read surface groups and get facade info
+void Building::readSurfaces(fs::path surfPath) {
+	// Open surfaces file
+	ifstream surfFile;
+	surfFile.exceptions(ios::eofbit | ios::badbit | ios::failbit);
+	surfFile.open(surfPath);
+
+	// Loop over all faces
+	for (size_t f = 0; f < indexBuf.size() / 3; f++) {
+		// Read the surface group this face belongs to
+		int fi;
+		surfFile >> fi;
+
+		// Add this face to the facade it belongs to
+		facadeInfo[fi].faceIDs.push_back(f);
+	}
+
+	// Loop over facades
+	for (auto& fi : facadeInfo) {
+		FacadeInfo& fa = fi.second;
+		// Get spatial extents
+		glm::vec2 minBB_uv(FLT_MAX), maxBB_uv(-FLT_MAX);
+		fa.zBB_utm = glm::vec2(FLT_MAX, -FLT_MAX);
+		for (auto f : fa.faceIDs) {
+			for (int v = 0; v < 3; v++) {
+				glm::vec3 p = posBuf[indexBuf[3 * f + v]];
+				fa.zBB_utm.x = glm::min(fa.zBB_utm.x, p.z);
+				fa.zBB_utm.y = glm::max(fa.zBB_utm.y, p.z);
+
+				glm::vec2 t = tcBuf[indexBuf[3 * f + v]];
+				minBB_uv = glm::min(minBB_uv, t);
+				maxBB_uv = glm::max(maxBB_uv, t);
+			}
+		}
+
+		// Get atlas UV bounding box
+		fa.atlasBB_uv.x = minBB_uv.x;
+		fa.atlasBB_uv.y = minBB_uv.y;
+		fa.atlasBB_uv.width = maxBB_uv.x - minBB_uv.x;
+		fa.atlasBB_uv.height = maxBB_uv.y - minBB_uv.y;
+		// Get atlas PX bounding box
+		fa.atlasBB_px.x = floor(fa.atlasBB_uv.x * atlasImg.cols);
+		fa.atlasBB_px.y = floor((1.0 - maxBB_uv.y) * atlasImg.rows);
+		fa.atlasBB_px.width = ceil(fa.atlasBB_uv.width * atlasImg.cols);
+		fa.atlasBB_px.height = ceil(fa.atlasBB_uv.height * atlasImg.rows);
+		// Get ROI of facade from atlas image
+		fa.facadeImg = atlasImg(fa.atlasBB_px);
 	}
 }
 
