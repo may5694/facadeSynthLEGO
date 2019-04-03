@@ -17,7 +17,7 @@ public:
 	void clear();
 
 	void scoreFacades();
-	void estimParams();
+	void estimParams(fs::path configPath);
 	void synthFacades();
 
 private:
@@ -44,6 +44,7 @@ private:
 	void readManifest(fs::path metaPath, fs::path& modelPath, fs::path& texPath, fs::path& surfPath);
 	void readModel(fs::path modelPath);
 	void readSurfaces(fs::path surfPath);
+	static cv::Rect findLargestRectangle(cv::Mat img);
 };
 
 // Holds information about a facade
@@ -52,12 +53,15 @@ struct FacadeInfo {
 	cv::Mat facadeImg;			// Facade texture (ROI of Building::atlasImg)
 	cv::Rect atlasBB_px;		// Bounding rect of facade in atlas (px, ul origin)
 	cv::Rect2f atlasBB_uv;		// Bounding rect of facade in atlas (uv, ll origin)
+	cv::Rect inscRect_px;		// Largest inscribed rectangle (px, wrt atlasBB_px)
 	glm::vec3 normal;			// Facing direction (UTM)
 	glm::vec2 size_utm;			// Width, height of rectified facade (rUTM)
+	glm::vec2 inscSize_utm;		// Width, height of inscribed rectangle (rUTM)
 	glm::vec2 zBB_utm;			// Z bounds (UTM)
 	glm::mat4 rectXform;		// UTM -> rUTM transformation matrix
 	glm::mat4 iRectXform;		// rUTM -> UTM transformation matrix
 	bool ground;				// Whether facade touches ground
+	bool inscGround;			// Whether inscribed rect touches ground
 	bool roof;					// Whether facade is a roof
 
 	// Estimated params

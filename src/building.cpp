@@ -1,11 +1,13 @@
 #include <fstream>
 #include <sstream>
 #include <iomanip>
+#include <stack>
 #include <rapidjson/document.h>
 #include <rapidjson/istreamwrapper.h>
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
 #include "building.hpp"
+#include "dn_predict.hpp"
 using namespace std;
 namespace rj = rapidjson;
 
@@ -91,7 +93,16 @@ void Building::scoreFacades() {
 }
 
 // Estimate facade parameters for each facade
-void Building::estimParams() {
+void Building::estimParams(fs::path configPath) {
+	// Loop over all facades
+	for (auto& fi : facadeInfo) {
+		// Skip roofs and very very small facades
+		if (fi.second.roof || fi.second.inscRect_px.width < 2 || fi.second.inscRect_px.height < 2)
+			continue;
+
+		// Predict facade parameters
+		dn_predict(fi.second, configPath.string());
+	}
 }
 
 // Generate synthetic facade geometry and save it
@@ -255,6 +266,10 @@ void Building::readSurfaces(fs::path surfPath) {
 		// Get ROI of facade from atlas image
 		fa.facadeImg = atlasImg(fa.atlasBB_px);
 
+		fa.inscRect_px = findLargestRectangle(fa.facadeImg);
+		fa.inscGround = (fa.ground &&
+			(fa.inscRect_px.y + fa.inscRect_px.height == fa.atlasBB_px.height));
+
 		if (debugFacades) {
 			stringstream ss;
 			ss << setw(4) << setfill('0') << fi.first;
@@ -288,7 +303,65 @@ void Building::readSurfaces(fs::path surfPath) {
 		fa.size_utm -= glm::vec2(minBB_rutm);
 		fa.rectXform[3] = glm::vec4(-minBB_rutm, 1.0);
 		fa.iRectXform = glm::inverse(fa.rectXform);
+		fa.inscSize_utm.x = fa.inscRect_px.width * fa.size_utm.x / fa.atlasBB_px.width;
+		fa.inscSize_utm.y = fa.inscRect_px.height * fa.size_utm.y / fa.atlasBB_px.height;
 	}
+}
+
+// Returns the largest rectangle inscribed within regions of all non-zero alpha-ch pixels
+cv::Rect Building::findLargestRectangle(cv::Mat img) {
+	// Extract alpha channel
+	cv::Mat aImg(img.size(), CV_8UC1);
+	cv::mixChannels(vector<cv::Mat>{ img }, vector<cv::Mat>{ aImg }, { 3, 0 });
+	cv::Mat mask = (aImg > 0) / 255;
+	mask.convertTo(mask, CV_16S);
+
+	// Get the largest area rectangle under a histogram
+	auto maxHist = [](cv::Mat hist) -> cv::Rect {
+		// Append -1 to both ends
+		cv::copyMakeBorder(hist, hist, 0, 0, 1, 1, cv::BORDER_CONSTANT, cv::Scalar::all(-1));
+		cv::Rect maxRect(-1, -1, 0, 0);
+
+		// Initialize stack to first element
+		stack<int> colStack;
+		colStack.push(0);
+
+		// Iterate over columns
+		for (int c = 0; c < hist.cols; c++) {
+			// Ensure stack is only increasing
+			while (hist.at<int16_t>(c) < hist.at<int16_t>(colStack.top())) {
+				// Pop larger element
+				int h = hist.at<int16_t>(colStack.top()); colStack.pop();
+				// Get largest rect at popped height using nearest smaller element on both sides
+				cv::Rect rect(colStack.top(), 0, c - colStack.top() - 1, h);
+				// Update best rect
+				if (rect.area() > maxRect.area())
+					maxRect = rect;
+			}
+			// Push this column
+			colStack.push(c);
+		}
+		return maxRect;
+	};
+
+	cv::Rect maxRect(-1, -1, 0, 0);
+	cv::Mat height = cv::Mat::zeros(1, mask.cols, CV_16SC1);
+	for (int r = 0; r < mask.rows; r++) {
+		// Extract a single row
+		cv::Mat row = mask.row(r);
+		// Get height of unbroken non-zero values per column
+		height = (height + row);
+		height.setTo(0, row == 0);
+
+		// Get largest rectangle from this row up
+		cv::Rect rect = maxHist(height);
+		if (rect.area() > maxRect.area()) {
+			maxRect = rect;
+			maxRect.y = r - maxRect.height + 1;
+		}
+	}
+
+	return maxRect;
 }
 
 // Default values for FacadeInfo members

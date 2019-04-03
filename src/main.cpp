@@ -88,7 +88,7 @@ void genFacadeModel(string cluster) {
 	b.scoreFacades();
 
 	// Estimate facade params
-	b.estimParams();
+	b.estimParams("model_config.json");
 
 	// Create synthetic facades
 	b.synthFacades();
