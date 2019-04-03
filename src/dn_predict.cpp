@@ -733,9 +733,9 @@ void saveInvalidFacade(FacadeInfo& fi, bool bDebug) {
 				avg_color.val[c] += src.at<cv::Vec3b>(i, j)[c];
 		}
 	}
-	fi.bg_color.r = avg_color.val[0] / (src.size().height * src.size().width);
-	fi.bg_color.g = avg_color.val[1] / (src.size().height * src.size().width);
-	fi.bg_color.b = avg_color.val[2] / (src.size().height * src.size().width);
+	fi.bg_color.b = avg_color.val[0] / (src.size().height * src.size().width) / 255;
+	fi.bg_color.g = avg_color.val[1] / (src.size().height * src.size().width) / 255;
+	fi.bg_color.r = avg_color.val[2] / (src.size().height * src.size().width) / 255;
 }
 
 std::vector<double> compute_confidence(cv::Mat croppedImage, std::string modeljson, bool bDebug) {
@@ -1350,13 +1350,13 @@ bool segment_chip(cv::Mat croppedImage, cv::Mat& dnn_img, FacadeInfo& fi, std::s
 		}
 	}
 
-	fi.bg_color.r = bg_avg_color.val[0];
-	fi.bg_color.g = bg_avg_color.val[1];
-	fi.bg_color.b = bg_avg_color.val[2];
+	fi.bg_color.b = bg_avg_color.val[0] / 255;
+	fi.bg_color.g = bg_avg_color.val[1] / 255;
+	fi.bg_color.r = bg_avg_color.val[2] / 255;
 
-	fi.win_color.r = win_avg_color.val[0];
-	fi.win_color.g = win_avg_color.val[1];
-	fi.win_color.b = win_avg_color.val[2];
+	fi.win_color.b = win_avg_color.val[0] / 255;
+	fi.win_color.g = win_avg_color.val[1] / 255;
+	fi.win_color.r = win_avg_color.val[2] / 255;
 
 	return true;
 }

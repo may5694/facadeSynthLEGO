@@ -36,6 +36,7 @@ private:
 
 	// Metadata
 	std::string cluster;					// Cluster ID
+	std::string model;						// Model name
 	glm::vec3 minBB_utm, maxBB_utm;			// Bounding box min/max coords (UTM)
 	std::map<int, FacadeInfo> facadeInfo;	// Per-facade info
 
@@ -57,7 +58,7 @@ struct FacadeInfo {
 	glm::vec3 normal;			// Facing direction (UTM)
 	glm::vec2 size_utm;			// Width, height of rectified facade (rUTM)
 	glm::vec2 inscSize_utm;		// Width, height of inscribed rectangle (rUTM)
-	glm::vec2 zBB_utm;			// Z bounds (UTM)
+	glm::vec2 zBB_utm;			// Z bounds ((min, max), UTM)
 	glm::mat4 rectXform;		// UTM -> rUTM transformation matrix
 	glm::mat4 iRectXform;		// rUTM -> UTM transformation matrix
 	bool ground;				// Whether facade touches ground
