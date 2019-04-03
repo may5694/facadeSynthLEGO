@@ -9,7 +9,7 @@ using namespace std;
 namespace fs = experimental::filesystem;
 
 // Global directories
-fs::path rootDir("lego_root");
+fs::path rootDir("lego_root/D4_hist");
 fs::path clusterDir = rootDir / "01700_MODELING" / "BuildingClusters";
 
 // Functions
@@ -76,6 +76,8 @@ set<string> getClusters(int argc, char** argv) {
 
 // Generate synthetic facades for the given cluster
 void genFacadeModel(string cluster) {
+	cout << cluster << endl;
+
 	// Get path to manifest file
 	fs::path metaPath = clusterDir / cluster / "Output" /
 		("building_cluster_" + cluster + "__TexturedModelMetadata.json");

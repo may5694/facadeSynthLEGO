@@ -877,11 +877,11 @@ void Building::readManifest(fs::path metaPath, fs::path& modelPath,
 	cluster = ss.str();
 
 	// Get model name
-//	string modelFilename = modelPath.filename().string();
-//	size_t ib = modelFilename.find("__") + 2;
-//	size_t ie = modelFilename.find("__", ib);
-//	model = modelFilename.substr(ib, ie - ib);
-	model = "cgv_r";
+	string modelFilename = modelPath.filename().string();
+	size_t ib = modelFilename.find("__") + 2;
+	size_t ie = modelFilename.find("__", ib);
+	model = modelFilename.substr(ib, ie - ib);
+//	model = "cgv_r";
 }
 
 // Read the .obj model and store the geometry

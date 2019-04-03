@@ -1,5 +1,6 @@
 build/
 debug/
+fig/
 lego_root/
 .lego_root.backup/
 facadeSynthLEGO
