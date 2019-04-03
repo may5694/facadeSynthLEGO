@@ -131,8 +131,8 @@ void Building::synthFacades() {
 	float recess = 0.0;		// Amount to recess windows and doors into the building
 	float g34_border = 2.0;	// Border above and below vertical windows
 
-	// Save atlas to texture folder
-	cv::imwrite(texPath.string(), atlasImg);
+	// Create synthetic atlas texture
+	cv::Mat synthAtlasImg = cv::Mat::zeros(atlasImg.size(), atlasImg.type());
 
 	// Add material for texture-mapped roofs
 	mtlFile << "newmtl atlas" << endl;
@@ -490,7 +490,19 @@ void Building::synthFacades() {
 				// Set the color to use
 				glm::vec3 color = window ? fp.win_color : fp.bg_color;
 
-				// TODO: add to texture
+				// Draw face onto synthetic atlas
+				cv::Scalar drawCol(color.b * 255, color.g * 255, color.r * 255, 255);
+				vector<vector<cv::Point>> pts(1);
+				pts[0].push_back({ int(va.x / fp.size_utm.x * fp.atlasBB_px.width + fp.atlasBB_px.x),
+					int((1.0 - va.y / fp.size_utm.y) * fp.atlasBB_px.height + fp.atlasBB_px.y) });
+				pts[0].push_back({ int(vb.x / fp.size_utm.x * fp.atlasBB_px.width + fp.atlasBB_px.x),
+					int((1.0 - vb.y / fp.size_utm.y) * fp.atlasBB_px.height + fp.atlasBB_px.y) });
+				pts[0].push_back({ int(vc.x / fp.size_utm.x * fp.atlasBB_px.width + fp.atlasBB_px.x),
+					int((1.0 - vc.y / fp.size_utm.y) * fp.atlasBB_px.height + fp.atlasBB_px.y) });
+				pts[0].push_back({ int(vd.x / fp.size_utm.x * fp.atlasBB_px.width + fp.atlasBB_px.x),
+					int((1.0 - vd.y / fp.size_utm.y) * fp.atlasBB_px.height + fp.atlasBB_px.y) });
+				cv::fillPoly(synthAtlasImg, pts, drawCol);
+
 
 				// Transform positions
 				va = glm::vec3(invXform * glm::vec4(va, 1.0));
@@ -756,6 +768,9 @@ void Building::synthFacades() {
 			// Use texture-mapped material
 			objFile << "usemtl atlas" << endl;
 
+			// Copy roof facade image to synth atlas
+			atlasImg(fp.atlasBB_px).copyTo(synthAtlasImg(fp.atlasBB_px));
+
 			// Add each triangle
 			for (auto f : fp.faceIDs) {
 				// Write positions
@@ -812,10 +827,25 @@ void Building::synthFacades() {
 				// Write indices
 				objFile << "f " << vcount+1 << " " << vcount+2 << " " << vcount+3 << endl;
 				vcount += 3;
+
+				// Draw triangle onto synth atlas
+				cv::Scalar drawCol(fp.bg_color.b * 255, fp.bg_color.g * 255,
+					fp.bg_color.r * 255, 255);
+				vector<vector<cv::Point>> pts(1);
+				glm::vec2 ta = tcBuf[indexBuf[3 * f + 0]];
+				glm::vec2 tb = tcBuf[indexBuf[3 * f + 1]];
+				glm::vec2 tc = tcBuf[indexBuf[3 * f + 2]];
+				pts[0].push_back({ int(ta.x * atlasImg.cols), int((1.0 - ta.y) * atlasImg.rows) });
+				pts[0].push_back({ int(tb.x * atlasImg.cols), int((1.0 - tb.y) * atlasImg.rows) });
+				pts[0].push_back({ int(tc.x * atlasImg.cols), int((1.0 - tc.y) * atlasImg.rows) });
+				cv::fillPoly(synthAtlasImg, pts, drawCol);
 			}
 
 		}
 	}		// for (size_t fi = 0; fi < facadeInfo.size(); fi++) {
+
+	// Save synthetic atlas
+	cv::imwrite(texPath.string(), synthAtlasImg);
 }
 
 // Read textured model paths and cluster ID from metadata manifest
