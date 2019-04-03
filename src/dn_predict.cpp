@@ -96,10 +96,10 @@ cv::Mat facade_clustering_kkmeans(cv::Mat src_img, int clusters) {
 
 	for (int i = 0; i < src_img.size().height; i++) {
 		for (int j = 0; j < src_img.size().width; j++) {
-			if (src_img.channels() == 3) {
-				m(0) = src_img.at<cv::Vec3b>(i, j)[0] * 1.0 / 255;
-				m(1) = src_img.at<cv::Vec3b>(i, j)[1] * 1.0 / 255;
-				m(2) = src_img.at<cv::Vec3b>(i, j)[2] * 1.0 / 255;
+			if (src_img.channels() == 4) {
+				m(0) = src_img.at<cv::Vec4b>(i, j)[0] * 1.0 / 255;
+				m(1) = src_img.at<cv::Vec4b>(i, j)[1] * 1.0 / 255;
+				m(2) = src_img.at<cv::Vec4b>(i, j)[2] * 1.0 / 255;
 			}
 			else {
 				m(0) = (int)src_img.at<uchar>(i, j) * 1.0 / 255;
@@ -131,13 +131,13 @@ cv::Mat facade_clustering_kkmeans(cv::Mat src_img, int clusters) {
 	}
 	int count = 0;
 	// 
-	if (src_img.channels() == 3) {
+	if (src_img.channels() == 4) {
 		count = 0;
 		for (int i = 0; i < src_img.size().height; i++) {
 			for (int j = 0; j < src_img.size().width; j++) {
-				clusters_colors[test(samples[count])][0] += src_img.at<cv::Vec3b>(i, j)[0];
-				clusters_colors[test(samples[count])][1] += src_img.at<cv::Vec3b>(i, j)[1];
-				clusters_colors[test(samples[count])][2] += src_img.at<cv::Vec3b>(i, j)[2];
+				clusters_colors[test(samples[count])][0] += src_img.at<cv::Vec4b>(i, j)[0];
+				clusters_colors[test(samples[count])][1] += src_img.at<cv::Vec4b>(i, j)[1];
+				clusters_colors[test(samples[count])][2] += src_img.at<cv::Vec4b>(i, j)[2];
 				clusters_points[test(samples[count])] ++;
 				count++;
 			}
@@ -205,14 +205,14 @@ cv::Mat facade_clustering_kkmeans(cv::Mat src_img, int clusters) {
 		for (int i = 0; i < out_img.size().height; i++) {
 			for (int j = 0; j < out_img.size().width; j++) {
 				if (test(samples[count]) == darkest_cluster) {
-					out_img.at<cv::Vec3b>(i, j)[0] = 0;
-					out_img.at<cv::Vec3b>(i, j)[1] = 0;
-					out_img.at<cv::Vec3b>(i, j)[2] = 0;
+					out_img.at<cv::Vec4b>(i, j)[0] = 0;
+					out_img.at<cv::Vec4b>(i, j)[1] = 0;
+					out_img.at<cv::Vec4b>(i, j)[2] = 0;
 				}
 				else {
-					out_img.at<cv::Vec3b>(i, j)[0] = 255;
-					out_img.at<cv::Vec3b>(i, j)[1] = 255;
-					out_img.at<cv::Vec3b>(i, j)[2] = 255;
+					out_img.at<cv::Vec4b>(i, j)[0] = 255;
+					out_img.at<cv::Vec4b>(i, j)[1] = 255;
+					out_img.at<cv::Vec4b>(i, j)[2] = 255;
 
 				}
 				count++;
@@ -730,7 +730,7 @@ void saveInvalidFacade(FacadeInfo& fi, bool bDebug) {
 	for (int i = 0; i < src.size().height; i++) {
 		for (int j = 0; j < src.size().width; j++) {
 			for (int c = 0; c < 3; c++)
-				avg_color.val[c] += src.at<cv::Vec3b>(i, j)[c];
+				avg_color.val[c] += src.at<cv::Vec4b>(i, j)[c];
 		}
 	}
 	fi.bg_color.b = avg_color.val[0] / (src.size().height * src.size().width) / 255;
@@ -1313,21 +1313,21 @@ bool segment_chip(cv::Mat croppedImage, cv::Mat& dnn_img, FacadeInfo& fi, std::s
 		for (int i = 0; i < dst_classify.size().height; i++) {
 			for (int j = 0; j < dst_classify.size().width; j++) {
 				if ((int)dst_classify.at<uchar>(i, j) == 0) {
-					win_avg_color.val[0] += src.at<cv::Vec3b>(i, j)[0];
-					win_avg_color.val[1] += src.at<cv::Vec3b>(i, j)[1];
-					win_avg_color.val[2] += src.at<cv::Vec3b>(i, j)[2];
-					win_histeq_color.val[0] += src_histeq.at<cv::Vec3b>(i, j)[0];
-					win_histeq_color.val[1] += src_histeq.at<cv::Vec3b>(i, j)[1];
-					win_histeq_color.val[2] += src_histeq.at<cv::Vec3b>(i, j)[2];
+					win_avg_color.val[0] += src.at<cv::Vec4b>(i, j)[0];
+					win_avg_color.val[1] += src.at<cv::Vec4b>(i, j)[1];
+					win_avg_color.val[2] += src.at<cv::Vec4b>(i, j)[2];
+					win_histeq_color.val[0] += src_histeq.at<cv::Vec4b>(i, j)[0];
+					win_histeq_color.val[1] += src_histeq.at<cv::Vec4b>(i, j)[1];
+					win_histeq_color.val[2] += src_histeq.at<cv::Vec4b>(i, j)[2];
 					win_count++;
 				}
 				else {
-					bg_avg_color.val[0] += src.at<cv::Vec3b>(i, j)[0];
-					bg_avg_color.val[1] += src.at<cv::Vec3b>(i, j)[1];
-					bg_avg_color.val[2] += src.at<cv::Vec3b>(i, j)[2];
-					bg_histeq_color.val[0] += src_histeq.at<cv::Vec3b>(i, j)[0];
-					bg_histeq_color.val[1] += src_histeq.at<cv::Vec3b>(i, j)[1];
-					bg_histeq_color.val[2] += src_histeq.at<cv::Vec3b>(i, j)[2];
+					bg_avg_color.val[0] += src.at<cv::Vec4b>(i, j)[0];
+					bg_avg_color.val[1] += src.at<cv::Vec4b>(i, j)[1];
+					bg_avg_color.val[2] += src.at<cv::Vec4b>(i, j)[2];
+					bg_histeq_color.val[0] += src_histeq.at<cv::Vec4b>(i, j)[0];
+					bg_histeq_color.val[1] += src_histeq.at<cv::Vec4b>(i, j)[1];
+					bg_histeq_color.val[2] += src_histeq.at<cv::Vec4b>(i, j)[2];
 					bg_count++;
 				}
 			}

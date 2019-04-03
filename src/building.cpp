@@ -949,7 +949,7 @@ void Building::readSurfaces(fs::path surfPath) {
 	surfFile.open(surfPath);
 
 	bool debugFacades = false;
-	fs::path debugDir = fs::path("debug") / cluster;
+	fs::path debugDir = fs::path("debugFacades") / cluster;
 	if (debugFacades) {
 		if (!fs::exists(debugDir))
 			fs::create_directories(debugDir);
