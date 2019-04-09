@@ -9,14 +9,21 @@ using namespace std;
 namespace fs = experimental::filesystem;
 
 // Global directories
-fs::path rootDir("lego_root/D4_hist");
-fs::path clusterDir = rootDir / "01700_MODELING" / "BuildingClusters";
+fs::path rootDir;
+fs::path clusterDir;
 
 // Functions
 set<string> getClusters(int argc, char** argv);
 void genFacadeModel(string cluster);
 
 int main(int argc, char** argv) {
+	if (argc < 2) {
+		cout << "Usage: " << argv[0] << " root-path [clusters]" << endl;
+		return -1;
+	}
+	rootDir = argv[1];
+	clusterDir = rootDir / "01700_MODELING" / "BuildingClusters";
+
 	try {
 		// Get clusters from cmd args
 		set<string> clusters = getClusters(argc, argv);
@@ -38,8 +45,8 @@ int main(int argc, char** argv) {
 // Get clusters from cmd args
 set<string> getClusters(int argc, char** argv) {
 	set<string> clusters;
-	if (argc > 1) {
-		for (int c = 1; c < argc; c++) {
+	if (argc > 2) {
+		for (int c = 2; c < argc; c++) {
 			// Add if argument string if cluster directory exists
 			if (fs::exists(clusterDir / argv[c]))
 				clusters.insert(argv[c]);
