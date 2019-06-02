@@ -13,13 +13,8 @@ find_package(GDAL REQUIRED)
 
 set(SOURCES
 	src/main.cpp
-#	src/satellite.cpp
 	src/building.cpp
-	src/dn_predict.cpp
-#	src/util.cpp
-#	src/openglcontext.cpp
-#	src/gl46.c)
-	)
+	src/dn_predict.cpp)
 
 add_executable(facadeSynthLEGO ${SOURCES})
 target_link_libraries(facadeSynthLEGO ${TORCH_LIBRARIES})
