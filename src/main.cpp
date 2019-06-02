@@ -14,7 +14,6 @@ fs::path clusterDir;
 
 // Functions
 set<string> getClusters(int argc, char** argv);
-void genFacadeModel(string cluster);
 
 int main(int argc, char** argv) {
 	if (argc < 2) {
@@ -30,7 +29,9 @@ int main(int argc, char** argv) {
 
 		// Process each cluster
 		for (auto cluster : clusters) {
-			genFacadeModel(cluster);
+            fs::path metaPath = clusterDir / cluster / "Output" /
+                                ("building_cluster_" + cluster + "__TexturedModelMetadata.json");
+            genFacadeModel(metaPath, "model_config.json");
 		}
 
 	} catch (const exception& e) {
@@ -79,26 +80,4 @@ set<string> getClusters(int argc, char** argv) {
 		throw runtime_error("No clusters found!");
 
 	return clusters;
-}
-
-// Generate synthetic facades for the given cluster
-void genFacadeModel(string cluster) {
-	cout << cluster << endl;
-
-	// Get path to manifest file
-	fs::path metaPath = clusterDir / cluster / "Output" /
-		("building_cluster_" + cluster + "__TexturedModelMetadata.json");
-
-	// Load the building data
-	Building b;
-	b.load(metaPath);
-
-	// Score all facades
-	b.scoreFacades();
-
-	// Estimate facade params
-	b.estimParams("model_config.json");
-
-	// Create synthetic facades
-	b.synthFacades();
 }

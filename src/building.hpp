@@ -11,9 +11,12 @@ namespace fs = std::experimental::filesystem;
 
 struct FacadeInfo;
 
+void genFacadeModel(const std::string &input_model_metadata_path, const std::string &,
+                    const std::string &config_json_path);
+
 class Building {
 public:
-	void load(fs::path metaPath);
+	void load(fs::path metaPath, fs::path outputMetaPath);
 	void clear();
 
 	void scoreFacades();
@@ -21,10 +24,6 @@ public:
 	void synthFacades();
 
 private:
-	// Directories
-	fs::path metaDir;					// Metadata directory
-	fs::path facadeModelDir;			// Synthetic model directory
-	fs::path facadeTextureDir;			// Synthetic texture directory
 
 	// Geometry buffers
 	std::vector<glm::vec3> posBuf;		// Positions
@@ -34,15 +33,16 @@ private:
 	// Texture atlas
 	cv::Mat atlasImg;					// Atlas texture image
 
-	// Metadata
-	std::string cluster;					// Cluster ID
-	std::string model;						// Model name
+	// Metadata	
+	fs::path outputModelPath;						// Output model name
+	fs::path outputTexPath;						// Output texture name
+	fs::path outputMtlPath;						// Output mtl name
 	glm::vec3 minBB_utm, maxBB_utm;			// Bounding box min/max coords (UTM)
 	std::map<int, FacadeInfo> facadeInfo;	// Per-facade info
 
 
 	// Methods
-	void readManifest(fs::path metaPath, fs::path& modelPath, fs::path& texPath, fs::path& surfPath);
+	void readManifest(fs::path metaPath, fs::path& modelPath, fs::path& texPath, fs::path& mtlPath, fs::path& surfPath);
 	void readModel(fs::path modelPath);
 	void readSurfaces(fs::path surfPath);
 	static cv::Rect findLargestRectangle(cv::Mat img);

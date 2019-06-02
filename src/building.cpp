@@ -11,20 +11,51 @@
 using namespace std;
 namespace rj = rapidjson;
 
-void Building::load(fs::path metaPath) {
+void Building::load(fs::path metaPath, fs::path outputMetaPath) {
 	// Clear any existing contents
 	clear();
 
-	// Set paths
-	metaDir = metaPath.parent_path();
-	facadeModelDir = metaDir / "FacadeModel";
-	facadeTextureDir = facadeModelDir / "Textures";
+    if (not fs::exists(metaPath)) {
+        throw std::runtime_error("File does not exist: " + metaPath.string());
+    }
+    if (not fs::exists(outputMetaPath)) {
+        throw std::runtime_error("File does not exist: " + outputMetaPath.string());
+    }
 
 	// Load the manifest metadata
-	fs::path modelPath, texPath, surfPath;
-	readManifest(metaPath, modelPath, texPath, surfPath);
+	fs::path modelPath, texPath, mtlPath, surfPath;
+	readManifest(metaPath, modelPath, texPath, mtlPath, surfPath);
 
-	// Load the geometry
+    if (modelPath.empty()) {
+        throw std::runtime_error("Could not find mesh (.obj) file path in " + modelPath.string());
+    }
+    if (not fs::exists(modelPath)) {
+        throw std::runtime_error("File does not exist: " + modelPath.string());
+    }
+    if (texPath.empty()) {
+        throw std::runtime_error("Could not find texture (.png) file path in " + texPath.string());
+    }	
+    if (not fs::exists(texPath)) {
+        throw std::runtime_error("File does not exist: " + texPath.string());
+    }
+	if (mtlPath.empty()) {
+		throw std::runtime_error("Could not find mtl (.mtl) file path in " + mtlPath.string());
+	}
+	if (not fs::exists(mtlPath)) {
+		throw std::runtime_error("File does not exist: " + mtlPath.string());
+	}
+    if (surfPath.empty()) {
+        throw std::runtime_error("Could not find surfaces (.surfaces) file path in " + surfPath.string());
+    }
+    if (not fs::exists(surfPath)) {
+        throw std::runtime_error("File does not exist: " + surfPath.string());
+    }
+
+	// Load the manifest metadata
+	fs::path dummySurfPath;
+	readManifest(outputMetaPath, outputModelPath, outputTexPath, outputMtlPath, dummySurfPath);
+
+    // Load the geometry
 	readModel(modelPath);
 
 	// Load the texture atlas
@@ -51,8 +82,13 @@ void Building::scoreFacades() {
 
 		// Separate into BGR and A
 		cv::Mat bgrImg(bgraImg.size(), CV_32FC3), aImg(bgraImg.size(), CV_32FC1);
-		cv::mixChannels(vector<cv::Mat>{ bgraImg }, vector<cv::Mat>{ bgrImg, aImg },
-			{ 0, 0, 1, 1, 2, 2, 3, 3 });
+		if (bgraImg.channels() == 4) {
+			cv::mixChannels(vector<cv::Mat>{ bgraImg }, vector<cv::Mat>{ bgrImg, aImg },
+				{ 0, 0, 1, 1, 2, 2, 3, 3 });
+		} else if (bgraImg.channels() == 3) {
+			bgrImg = bgraImg.clone();
+			aImg.setTo(cv::Scalar::all(1.0));
+		}
 		cv::Mat aMask = (aImg > 0.5);
 
 		// Convert to HSV space
@@ -107,17 +143,21 @@ void Building::estimParams(fs::path configPath) {
 
 // Generate synthetic facade geometry and save it
 void Building::synthFacades() {
+	
+	// Get paths to output files
+	fs::path objPath = outputModelPath;
+	fs::path mtlPath = outputMtlPath;
+	fs::path texPath = outputTexPath;
+
+	fs::path facadeModelDir = objPath.parent_path();
+	fs::path facadeTextureDir = texPath.parent_path();
+
 	// Create output directories
 	if (!fs::exists(facadeModelDir))
 		fs::create_directory(facadeModelDir);
 	if (!fs::exists(facadeTextureDir))
 		fs::create_directory(facadeTextureDir);
 
-	// Get paths to output files
-	fs::path objPath = facadeModelDir /
-		("building_cluster_" + cluster + "__" + model + "__output_mesh_facade.obj");
-	fs::path mtlPath = objPath; mtlPath.replace_extension(".mtl");
-	fs::path texPath = facadeTextureDir / ("cluster-00" + cluster + ".png");
 	// Path to texture relative to model
 	fs::path relTexPath; auto tp = texPath.begin();
 	for (auto mp = facadeModelDir.begin(); mp != facadeModelDir.end(); ++mp, ++tp);
@@ -848,9 +888,9 @@ void Building::synthFacades() {
 	cv::imwrite(texPath.string(), synthAtlasImg);
 }
 
-// Read textured model paths and cluster ID from metadata manifest
+// Read textured model paths from metadata manifest
 void Building::readManifest(fs::path metaPath, fs::path& modelPath,
-	fs::path& texPath, fs::path& surfPath) {
+	fs::path& texPath, fs::path& mtlPath, fs::path& surfPath) {
 
 	// Open and read the manifest file
 	ifstream metaFile(metaPath);
@@ -863,25 +903,14 @@ void Building::readManifest(fs::path metaPath, fs::path& modelPath,
 	for (rj::SizeType i = 0; i < manifest.Size(); i++) {
 		fs::path p = manifest[i].GetString();
 		if (p.extension().string() == ".obj")
-			modelPath = metaDir / p;
+			modelPath = metaPath.parent_path() / p;
 		else if (p.extension().string() == ".png")
-			texPath = metaDir / p;
+			texPath = metaPath.parent_path() / p;
+		else if (p.extension().string() == ".mtl")
+			mtlPath = metaPath.parent_path() / p;
 		else if (p.extension().string() == ".surfaces")
-			surfPath = metaDir / p;
+			surfPath = metaPath.parent_path() / p;
 	}
-
-	// Read cluster ID, convert to string
-	int clusterID = meta["_items"]["cluster_id"].GetInt();
-	stringstream ss;
-	ss << setw(4) << setfill('0') << clusterID;
-	cluster = ss.str();
-
-	// Get model name
-	string modelFilename = modelPath.filename().string();
-	size_t ib = modelFilename.find("__") + 2;
-	size_t ie = modelFilename.find("__", ib);
-	model = modelFilename.substr(ib, ie - ib);
-//	model = "cgv_r";
 }
 
 // Read the .obj model and store the geometry
@@ -948,12 +977,12 @@ void Building::readSurfaces(fs::path surfPath) {
 	surfFile.exceptions(ios::eofbit | ios::badbit | ios::failbit);
 	surfFile.open(surfPath);
 
-	bool debugFacades = false;
-	fs::path debugDir = fs::path("debugFacades") / cluster;
-	if (debugFacades) {
-		if (!fs::exists(debugDir))
-			fs::create_directories(debugDir);
-	}
+//	bool debugFacades = false;
+//	fs::path debugDir = fs::path("debugFacades") / cluster;
+//	if (debugFacades) {
+//		if (!fs::exists(debugDir))
+//			fs::create_directories(debugDir);
+//	}
 
 	// Loop over all faces
 	for (size_t f = 0; f < indexBuf.size() / 3; f++) {
@@ -1016,12 +1045,12 @@ void Building::readSurfaces(fs::path surfPath) {
 		fa.inscGround = (fa.ground &&
 			(fa.inscRect_px.y + fa.inscRect_px.height == fa.atlasBB_px.height));
 
-		if (debugFacades) {
-			stringstream ss;
-			ss << setw(4) << setfill('0') << fi.first;
-			fs::path debugPath = debugDir / (ss.str() + ".png");
-			cv::imwrite(debugPath.string(), fa.facadeImg);
-		}
+//		if (debugFacades) {
+//			stringstream ss;
+//			ss << setw(4) << setfill('0') << fi.first;
+//			fs::path debugPath = debugDir / (ss.str() + ".png");
+//			cv::imwrite(debugPath.string(), fa.facadeImg);
+//		}
 
 		// Get orientation matrix
 		fa.rectXform = glm::mat4(1.0);
@@ -1058,7 +1087,11 @@ void Building::readSurfaces(fs::path surfPath) {
 cv::Rect Building::findLargestRectangle(cv::Mat img) {
 	// Extract alpha channel
 	cv::Mat aImg(img.size(), CV_8UC1);
-	cv::mixChannels(vector<cv::Mat>{ img }, vector<cv::Mat>{ aImg }, { 3, 0 });
+	if (img.channels() == 4) {
+		cv::mixChannels(vector<cv::Mat>{ img }, vector<cv::Mat>{ aImg }, { 3, 0 });
+	} else if (img.channels() == 3) {
+		aImg.setTo(cv::Scalar::all(255));
+	}
 	cv::Mat mask = (aImg > 0) / 255;
 	mask.convertTo(mask, CV_16S);
 
@@ -1130,3 +1163,20 @@ FacadeInfo::FacadeInfo() :
 	doors(0),
 	relativeDWidth(0.0),
 	relativeDHeight(0.0) {}
+
+// Generate synthetic facades for the given cluster
+void genFacadeModel(const string& model_metadata_path, const string& output_model_metadata_path, const string& config_json_path) {
+
+    // Load the building data
+    Building b;
+    b.load(fs::path(model_metadata_path), fs::path(output_model_metadata_path));
+
+    // Score all facades
+    b.scoreFacades();
+
+    // Estimate facade params
+    b.estimParams(config_json_path);
+
+    // Create synthetic facades
+    b.synthFacades();
+}
