@@ -8,12 +8,19 @@
 #include "tiny_obj_loader.h"
 #include "building.hpp"
 #include "dn_predict.hpp"
+#include "json.hpp"
 using namespace std;
 namespace rj = rapidjson;
+using json = nlohmann::json;
 
-void Building::load(fs::path metaPath, fs::path outputMetaPath) {
+void Building::load(fs::path metaPath, fs::path outputMetaPath, fs::path debugPath) {
 	// Clear any existing contents
 	clear();
+
+	if (!debugPath.empty()) {
+		debugOut = true;
+		debugDir = debugPath;
+	}
 
     if (not fs::exists(metaPath)) {
         throw std::runtime_error("File does not exist: " + metaPath.string());
@@ -34,7 +41,7 @@ void Building::load(fs::path metaPath, fs::path outputMetaPath) {
     }
     if (texPath.empty()) {
         throw std::runtime_error("Could not find texture (.png) file path in " + texPath.string());
-    }	
+    }
     if (not fs::exists(texPath)) {
         throw std::runtime_error("File does not exist: " + texPath.string());
     }
@@ -63,6 +70,35 @@ void Building::load(fs::path metaPath, fs::path outputMetaPath) {
 
 	// Read surface groupings
 	readSurfaces(surfPath);
+
+	// Debug output
+	if (debugOut) {
+		// Create debug cluster dir
+		if (!fs::exists(debugDir))
+			fs::create_directories(debugDir);
+		// Create facade image directory
+		fs::path imageDir = debugDir / "image";
+		if (fs::exists(imageDir))
+			fs::remove_all(imageDir);
+		fs::create_directory(imageDir);
+		// Create facade chip directory
+		fs::path chipDir = debugDir / "chip";
+		if (fs::exists(chipDir))
+			fs::remove_all(chipDir);
+		fs::create_directory(chipDir);
+
+		for (auto& fi : facadeInfo) {
+			// Save facade image
+			stringstream ss;
+			ss << setw(4) << setfill('0') << fi.first;
+			fs::path imagePath = imageDir / (ss.str() + ".png");
+			cv::imwrite(imagePath.string(), fi.second.facadeImg);
+
+			// Save chip image
+			fs::path chipPath = chipDir / (ss.str() + ".png");
+			cv::imwrite(chipPath.string(), fi.second.facadeImg(fi.second.inscRect_px));
+		}
+	}
 }
 
 void Building::clear() {
@@ -130,20 +166,90 @@ void Building::scoreFacades() {
 
 // Estimate facade parameters for each facade
 void Building::estimParams(fs::path configPath) {
-	// Loop over all facades
-	for (auto& fi : facadeInfo) {
-		// Skip roofs and very very small facades
-		if (fi.second.roof || fi.second.inscRect_px.width < 2 || fi.second.inscRect_px.height < 2)
-			continue;
-
-		// Predict facade parameters
-		dn_predict(fi.second, configPath.string());
+	// Create debug metadata directory
+	fs::path metaDir;
+	if (debugOut) {
+		metaDir = debugDir / "metadata";
+		if (fs::exists(metaDir))
+			fs::remove_all(metaDir);
+		fs::create_directory(metaDir);
 	}
+
+	// Loop over all facades
+	int i = 1;
+	for (auto& fi : facadeInfo) {
+		cout << "\rEstimating params... (" << i++ << " / " << facadeInfo.size() << ")";
+		cout.flush();
+
+		// Skip roofs and very very small facades
+		if (!(fi.second.roof || fi.second.inscRect_px.width < 2 || fi.second.inscRect_px.height < 2))
+			// Predict facade parameters
+			dn_predict(fi.second, configPath.string());
+
+		// Metadata output
+		if (debugOut) {
+			stringstream ss;
+			ss << setw(4) << setfill('0') << fi.first;
+
+			json metadata;
+			metadata["facade"] = fi.first;
+			metadata["roof"] = fi.second.roof;
+			metadata["crop"][0] = fi.second.inscRect_px.x;
+			metadata["crop"][1] = fi.second.inscRect_px.y;
+			metadata["crop"][2] = fi.second.inscRect_px.width;
+			metadata["crop"][3] = fi.second.inscRect_px.height;
+			metadata["size"][0] = fi.second.inscSize_utm.x;
+			metadata["size"][1] = fi.second.inscSize_utm.y;
+			metadata["ground"] = fi.second.inscGround;
+			metadata["score"] = fi.second.score;
+			metadata["imagename"] = (debugDir / "chip" / (ss.str() + ".png")).string();
+			metadata["valid"] = fi.second.valid;
+			metadata["bg_color"][0] = fi.second.bg_color.b * 255;
+			metadata["bg_color"][1] = fi.second.bg_color.g * 255;
+			metadata["bg_color"][2] = fi.second.bg_color.r * 255;
+			if (fi.second.valid) {
+				metadata["grammar"] = fi.second.grammar;
+				metadata["chip_size"][0] = fi.second.chip_size.x;
+				metadata["chip_size"][1] = fi.second.chip_size.y;
+				metadata["window_color"][0] = fi.second.win_color.b * 255;
+				metadata["window_color"][1] = fi.second.win_color.g * 255;
+				metadata["window_color"][2] = fi.second.win_color.r * 255;
+				metadata["confidences"][0] = fi.second.conf[0];
+				metadata["confidences"][1] = fi.second.conf[1];
+				metadata["confidences"][2] = fi.second.conf[2];
+				metadata["confidences"][3] = fi.second.conf[3];
+				metadata["confidences"][4] = fi.second.conf[4];
+				metadata["confidences"][5] = fi.second.conf[5];
+				metadata["paras"]["rows"] = fi.second.rows;
+				metadata["paras"]["cols"] = fi.second.cols;
+				metadata["paras"]["grouping"] = fi.second.grouping;
+				metadata["paras"]["relativeWidth"] = fi.second.relativeWidth;
+				metadata["paras"]["relativeHeight"] = fi.second.relativeHeight;
+				metadata["paras"]["doors"] = fi.second.doors;
+				metadata["paras"]["relativeDWidth"] = fi.second.relativeDWidth;
+				metadata["paras"]["relativeDHeight"] = fi.second.relativeDHeight;
+			}
+
+			fs::path metaPath = metaDir / (ss.str() + ".json");
+			ofstream metaFile(metaPath);
+			metaFile << setw(4) << metadata << endl;
+		}
+	}
+	cout << endl;
 }
 
 // Generate synthetic facade geometry and save it
 void Building::synthFacades() {
-	
+
+	// Create debug output directory
+	fs::path synthDir;
+	if (debugOut) {
+		synthDir = debugDir / "synth";
+		if (fs::exists(synthDir))
+			fs::remove_all(synthDir);
+		fs::create_directory(synthDir);
+	}
+
 	// Get paths to output files
 	fs::path objPath = outputModelPath;
 	fs::path mtlPath = outputMtlPath;
@@ -882,6 +988,16 @@ void Building::synthFacades() {
 			}
 
 		}
+
+		// Write out synthetic image
+		if (debugOut) {
+			stringstream ss;
+			ss << setw(4) << setfill('0') << fi.first;
+
+			fs::path synthPath = synthDir / (ss.str() + ".png");
+			cv::imwrite(synthPath.string(), synthAtlasImg(fi.second.atlasBB_px));
+		}
+
 	}		// for (size_t fi = 0; fi < facadeInfo.size(); fi++) {
 
 	// Save synthetic atlas
@@ -1165,11 +1281,14 @@ FacadeInfo::FacadeInfo() :
 	relativeDHeight(0.0) {}
 
 // Generate synthetic facades for the given cluster
-void genFacadeModel(const string& model_metadata_path, const string& output_model_metadata_path, const string& config_json_path) {
+void genFacadeModel(const string& model_metadata_path,
+	const string& output_model_metadata_path,
+	const string& config_json_path,
+	fs::path debugPath) {
 
     // Load the building data
     Building b;
-    b.load(fs::path(model_metadata_path), fs::path(output_model_metadata_path));
+    b.load(fs::path(model_metadata_path), fs::path(output_model_metadata_path), debugPath);
 
     // Score all facades
     b.scoreFacades();

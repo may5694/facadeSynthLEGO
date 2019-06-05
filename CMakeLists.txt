@@ -10,6 +10,7 @@ find_package(RapidJSON REQUIRED)
 find_package(Torch REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(GDAL REQUIRED)
+find_package(dlib 19.17 REQUIRED)
 
 set(SOURCES
 	src/main.cpp
@@ -21,5 +22,6 @@ target_link_libraries(facadeSynthLEGO ${TORCH_LIBRARIES})
 target_link_libraries(facadeSynthLEGO ${OpenCV_LIBS})
 target_link_libraries(facadeSynthLEGO ${GDAL_LIBRARY})
 target_link_libraries(facadeSynthLEGO stdc++fs)
+target_link_libraries(facadeSynthLEGO ${DLIB_LIBRARIES} dlib cblas)
 
 install(TARGETS facadeSynthLEGO DESTINATION .)

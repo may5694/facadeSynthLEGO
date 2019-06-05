@@ -2,7 +2,7 @@ build/
 debug/
 fig/
 lego_root/
-lego_root
+output/
 .lego_root.backup*/
 facadeSynthLEGO
 *.swp

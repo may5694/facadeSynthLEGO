@@ -12,11 +12,12 @@ namespace fs = std::experimental::filesystem;
 struct FacadeInfo;
 
 void genFacadeModel(const std::string &input_model_metadata_path, const std::string &,
-                    const std::string &config_json_path);
+                    const std::string &config_json_path, fs::path debugPath = {});
 
 class Building {
 public:
-	void load(fs::path metaPath, fs::path outputMetaPath);
+	Building(): debugOut(false) {}
+	void load(fs::path metaPath, fs::path outputMetaPath, fs::path debugPath = {});
 	void clear();
 
 	void scoreFacades();
@@ -33,13 +34,14 @@ private:
 	// Texture atlas
 	cv::Mat atlasImg;					// Atlas texture image
 
-	// Metadata	
+	// Metadata
 	fs::path outputModelPath;						// Output model name
 	fs::path outputTexPath;						// Output texture name
 	fs::path outputMtlPath;						// Output mtl name
 	glm::vec3 minBB_utm, maxBB_utm;			// Bounding box min/max coords (UTM)
 	std::map<int, FacadeInfo> facadeInfo;	// Per-facade info
-
+	bool debugOut;							// Whether to output debug info
+	fs::path debugDir;						// Directory to save debug info to
 
 	// Methods
 	void readManifest(fs::path metaPath, fs::path& modelPath, fs::path& texPath, fs::path& mtlPath, fs::path& surfPath);
