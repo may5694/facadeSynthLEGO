@@ -95,8 +95,9 @@ void Building::load(fs::path metaPath, fs::path outputMetaPath, fs::path debugPa
 			cv::imwrite(imagePath.string(), fi.second.facadeImg);
 
 			// Save chip image
+			cv::Mat chipImg = fi.second.facadeImg(fi.second.inscRect_px);
 			fs::path chipPath = chipDir / (ss.str() + ".png");
-			cv::imwrite(chipPath.string(), fi.second.facadeImg(fi.second.inscRect_px));
+			cv::imwrite(chipPath.string(), chipImg);
 		}
 	}
 }
@@ -1110,6 +1111,9 @@ void Building::readSurfaces(fs::path surfPath) {
 		facadeInfo[fi].faceIDs.push_back(f);
 	}
 
+	// Keep track of facades we need to remove from consideration
+	set<int> invalids;
+
 	// Loop over facades
 	for (auto& fi : facadeInfo) {
 		FacadeInfo& fa = fi.second;
@@ -1156,8 +1160,12 @@ void Building::readSurfaces(fs::path surfPath) {
 		fa.atlasBB_px.height = ceil(fa.atlasBB_uv.height * atlasImg.rows);
 		// Get ROI of facade from atlas image
 		fa.facadeImg = atlasImg(fa.atlasBB_px);
-
+		// Get inscribed rectangle
 		fa.inscRect_px = findLargestRectangle(fa.facadeImg);
+		// If no data, mark facade as invalid (removed later)
+		if (fa.inscRect_px.x < 0 || fa.inscRect_px.y < 0)
+			invalids.insert(fi.first);
+
 		fa.inscGround = (fa.ground &&
 			(fa.inscRect_px.y + fa.inscRect_px.height == fa.atlasBB_px.height));
 
@@ -1197,6 +1205,10 @@ void Building::readSurfaces(fs::path surfPath) {
 		fa.inscSize_utm.x = fa.inscRect_px.width * fa.size_utm.x / fa.atlasBB_px.width;
 		fa.inscSize_utm.y = fa.inscRect_px.height * fa.size_utm.y / fa.atlasBB_px.height;
 	}
+
+	// Remove invalid facades from facadeInfo
+	for (auto& fi : invalids)
+		facadeInfo.erase(fi);
 }
 
 // Returns the largest rectangle inscribed within regions of all non-zero alpha-ch pixels
@@ -1206,7 +1218,10 @@ cv::Rect Building::findLargestRectangle(cv::Mat img) {
 	if (img.channels() == 4) {
 		cv::mixChannels(vector<cv::Mat>{ img }, vector<cv::Mat>{ aImg }, { 3, 0 });
 	} else if (img.channels() == 3) {
-		aImg.setTo(cv::Scalar::all(255));
+		// Interpret alpha as all zero-valued channels
+		vector<cv::Mat> ch;
+		cv::split(img, ch);
+		aImg = ~((ch[0] == 0) & (ch[1] == 0) & (ch[2] == 0));
 	}
 	cv::Mat mask = (aImg > 0) / 255;
 	mask.convertTo(mask, CV_16S);
