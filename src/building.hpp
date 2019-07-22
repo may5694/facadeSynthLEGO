@@ -1,6 +1,7 @@
 #ifndef BUILDING_HPP
 #define BUILDING_HPP
 
+#include <torch/script.h> // One-stop header.
 #include <array>
 #include <vector>
 #include <map>
@@ -10,9 +11,12 @@
 namespace fs = std::experimental::filesystem;
 
 struct FacadeInfo;
+struct ModelInfo;
 
 void genFacadeModel(const std::string &input_model_metadata_path, const std::string &,
-                    const std::string &config_json_path, fs::path debugPath = {});
+                    ModelInfo& mi, fs::path debugPath = {});
+
+void readModeljson(std::string modeljson, ModelInfo& mi);
 
 class Building {
 public:
@@ -21,7 +25,7 @@ public:
 	void clear();
 
 	void scoreFacades();
-	void estimParams(fs::path configPath);
+	void estimParams(ModelInfo& mi);
 	void synthFacades();
 
 private:
@@ -85,6 +89,43 @@ struct FacadeInfo {
 	float relativeDHeight;		// Height of doors wrt facade chip (0, 1)
 
 	FacadeInfo();
+};
+
+// Hold information about Grammars
+struct Grammar {
+	std::shared_ptr<torch::jit::script::Module> grammar_model;
+	int number_paras;
+	int grammar_id;
+	std::vector<double> rangeOfRows;
+	std::vector<double> rangeOfCols;
+	std::vector<double> rangeOfGrouping;
+	std::vector<double> rangeOfDoors;
+	std::vector<double> relativeWidth;
+	std::vector<double> relativeHeight;
+	std::vector<double> relativeDWidth;
+	std::vector<double> relativeDHeight;
+};
+
+// Holds information about NNs
+struct ModelInfo {
+	std::string facadesFolder;
+	std::string invalidfacadesFolder;
+	std::string chipsFolder;
+	std::string segsFolder;
+	std::string dnnsInFolder;
+	std::string dnnsOutFolder;
+	std::string dilatesFolder;
+	std::string alignsFolder;
+	bool debug;
+	std::vector<double> defaultSize;
+	std::vector<double> paddingSize;
+	std::vector<double> targetChipSize;
+	std::vector<double> segImageSize;
+	Grammar grammars[6];
+	std::shared_ptr<torch::jit::script::Module> classifier_module;
+	int number_grammars;
+	std::shared_ptr<torch::jit::script::Module> reject_classifier_module;
+	std::shared_ptr<torch::jit::script::Module> seg_module;
 };
 
 #endif

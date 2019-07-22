@@ -27,6 +27,10 @@ int main(int argc, char** argv) {
 		// Read command line arguments
 		Options opts = readArgs(argc, argv);
 
+		// Read models json
+		ModelInfo mi;
+		readModeljson("model_config.json", mi);
+
 		// Process each cluster
 		for (auto cluster : opts.clusters) {
 			fs::path inputMetaPath = opts.clusterDir / cluster / "Output" /
@@ -37,7 +41,9 @@ int main(int argc, char** argv) {
 			if (opts.debugOut)
 				debugPath = opts.debugDir / cluster;
 
-			genFacadeModel(inputMetaPath, outputMetaPath, "model_config.json", debugPath);
+			cout << "Cluster: " << cluster << endl;
+
+			genFacadeModel(inputMetaPath, outputMetaPath, mi, debugPath);
 		}
 
 	} catch (const exception& e) {

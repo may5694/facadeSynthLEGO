@@ -13,38 +13,31 @@
 #include "rapidjson/filewritestream.h"
 #include "building.hpp"
 
-int const cluster_number = 2;
+void dn_predict(FacadeInfo& fi, ModelInfo& mi);
 
-void dn_predict(FacadeInfo& fi, std::string modeljson);
-double readNumber(const rapidjson::Value& node, const char* key, double default_value);
-std::vector<double> read1DArray(const rapidjson::Value& node, const char* key);
-bool readBoolValue(const rapidjson::Value& node, const char* key, bool default_value);
-std::string readStringValue(const rapidjson::Value& node, const char* key);
-cv::Mat facade_clustering_kkmeans(cv::Mat src_img, int clusters);
-
-/**** steps *****/
-bool chipping(FacadeInfo& fi, std::string modeljson, cv::Mat& croppedImage, bool bMultipleChips, bool bDebug);
-std::vector<cv::Mat> crop_chip(cv::Mat src_chip, std::string modeljson, int type, bool bground, std::vector<double> facChip_size, double target_width, double target_height, bool bMultipleChips);
-cv::Mat adjust_chip(cv::Mat chip);
-bool checkFacade(FacadeInfo& fi);
-void saveInvalidFacade(FacadeInfo& fi, bool bDebug);
-std::vector<double> compute_confidence(cv::Mat croppedImage, std::string modeljson, bool bDebug);
-std::vector<double> compute_door_paras(cv::Mat croppedImage, std::string modeljson, bool bDebug);
-
-bool segment_chip(cv::Mat croppedImage, cv::Mat& dnn_img, FacadeInfo& fi, std::string modeljson, bool bDebug);
+/**** helper functions *****/
+int reject(cv::Mat src_img, std::vector<double> facadeSize, std::vector<double> targetSize, double score, bool bDebug);
+int reject(cv::Mat src_img, ModelInfo& mi, std::vector<double> facadeSize, std::vector<double> targetSize, std::vector<double> defaultImgSize, bool bDebug);
 cv::Mat cleanAlignedImage(cv::Mat src, float threshold);
 cv::Mat deSkewImg(cv::Mat src_img);
-cv::Rect findLargestRectangle(cv::Mat image);
-bool findIntersection(cv::Rect a1, cv::Rect a2);
-bool insideRect(cv::Rect a1, cv::Point p);
+void apply_segmentation_model(cv::Mat &croppedImage, cv::Mat &chip_seg, ModelInfo& mi, bool bDebug);
+std::vector<int> adjust_chip(cv::Mat chip);
+int choose_best_chip(std::vector<cv::Mat> chips, ModelInfo& mi, bool bDebug);
+std::vector<double> compute_chip_info(cv::Mat chip, ModelInfo& mi, bool bDebug);
 
-void feedDnn(cv::Mat dnn_img, FacadeInfo& fi, std::string modeljson, bool bDebug);
-bool readGround(FacadeInfo& fi);
-std::vector<double> grammar1(std::string modeljson, std::vector<double> paras, bool bDebug);
-std::vector<double> grammar2(std::string modeljson, std::vector<double> paras, bool bDebug);
-std::vector<double> grammar3(std::string modeljson, std::vector<double> paras, bool bDebug);
-std::vector<double> grammar4(std::string modeljson, std::vector<double> paras, bool bDebug);
-std::vector<double> grammar5(std::string modeljson, std::vector<double> paras, bool bDebug);
-std::vector<double> grammar6(std::string modeljson, std::vector<double> paras, bool bDebug);
+/**** steps *****/
+bool chipping(FacadeInfo& fi, ModelInfo& mi, cv::Mat& chip_seg, bool bMultipleChips, bool bDebug);
+std::vector<cv::Mat> crop_chip_ground(cv::Mat src_facade, int type, std::vector<double> facadeSize, std::vector<double> targetSize, bool bMultipleChips);
+std::vector<cv::Mat> crop_chip_no_ground(cv::Mat src_facade, int type, std::vector<double> facadeSize, std::vector<double> targetSize, bool bMultipleChips);
+bool process_chip(cv::Mat chip_seg, cv::Mat& dnn_img, ModelInfo& mi, bool bDebug);
+void feedDnn(cv::Mat dnn_img, FacadeInfo& fi, ModelInfo& mi, bool bDebug);
+
+/**** grammar predictions ****/
+std::vector<double> grammar1(ModelInfo& mi, std::vector<double> paras, bool bDebug);
+std::vector<double> grammar2(ModelInfo& mi, std::vector<double> paras, bool bDebug);
+std::vector<double> grammar3(ModelInfo& mi, std::vector<double> paras, bool bDebug);
+std::vector<double> grammar4(ModelInfo& mi, std::vector<double> paras, bool bDebug);
+std::vector<double> grammar5(ModelInfo& mi, std::vector<double> paras, bool bDebug);
+std::vector<double> grammar6(ModelInfo& mi, std::vector<double> paras, bool bDebug);
 
 #endif

@@ -9,6 +9,8 @@
 #include "building.hpp"
 #include "dn_predict.hpp"
 #include "json.hpp"
+#include "utils.hpp"
+
 using namespace std;
 namespace rj = rapidjson;
 using json = nlohmann::json;
@@ -166,7 +168,7 @@ void Building::scoreFacades() {
 }
 
 // Estimate facade parameters for each facade
-void Building::estimParams(fs::path configPath) {
+void Building::estimParams(ModelInfo& mi) {
 	// Create debug metadata directory
 	fs::path metaDir;
 	if (debugOut) {
@@ -185,7 +187,7 @@ void Building::estimParams(fs::path configPath) {
 		// Skip roofs and very very small facades
 		if (!(fi.second.roof || fi.second.inscRect_px.width < 2 || fi.second.inscRect_px.height < 2))
 			// Predict facade parameters
-			dn_predict(fi.second, configPath.string());
+			dn_predict(fi.second, mi);
 
 		// Metadata output
 		if (debugOut) {
@@ -1298,7 +1300,7 @@ FacadeInfo::FacadeInfo() :
 // Generate synthetic facades for the given cluster
 void genFacadeModel(const string& model_metadata_path,
 	const string& output_model_metadata_path,
-	const string& config_json_path,
+	ModelInfo& mi,
 	fs::path debugPath) {
 
     // Load the building data
@@ -1309,8 +1311,113 @@ void genFacadeModel(const string& model_metadata_path,
     b.scoreFacades();
 
     // Estimate facade params
-    b.estimParams(config_json_path);
+    b.estimParams(mi);
 
     // Create synthetic facades
     b.synthFacades();
+}
+
+void readModeljson(std::string modeljson, ModelInfo& mi) {
+	// read model config json file
+	FILE* fp = fopen(modeljson.c_str(), "rb"); // non-Windows use "r"
+	char readBuffer[10240];
+	memset(readBuffer, 0, sizeof(readBuffer));
+	rapidjson::FileReadStream isModel(fp, readBuffer, sizeof(readBuffer));
+	rapidjson::Document docModel;
+	docModel.ParseStream(isModel);
+	fclose(fp);
+	mi.targetChipSize = util::read1DArray(docModel, "targetChipSize");
+	mi.segImageSize = util::read1DArray(docModel, "segImageSize");
+	mi.defaultSize = util::read1DArray(docModel, "defaultSize");
+	mi.paddingSize = util::read1DArray(docModel, "paddingSize");
+	std::string reject_model = util::readStringValue(docModel, "reject_model");
+	// load reject model
+	mi.reject_classifier_module = torch::jit::load(reject_model);
+	mi.reject_classifier_module->to(at::kCUDA);
+	assert(mi.reject_classifier_module != nullptr);
+	std::string seg_model = util::readStringValue(docModel, "seg_model");
+	// load segmentation model
+	mi.seg_module = torch::jit::load(seg_model);
+	mi.seg_module->to(at::kCUDA);
+	assert(mi.seg_module != nullptr);
+	mi.debug = util::readBoolValue(docModel, "debug", false);
+	rapidjson::Value& grammars = docModel["grammars"];
+	// classifier
+	rapidjson::Value& grammar_classifier = grammars["classifier"];
+	// path of DN model
+	std::string classifier_path = util::readStringValue(grammar_classifier, "model");
+	// load grammar classifier model
+	mi.classifier_module = torch::jit::load(classifier_path);
+	mi.classifier_module->to(at::kCUDA);
+	assert(mi.classifier_module != nullptr);
+	mi.number_grammars = util::readNumber(grammar_classifier, "number_paras", 6);
+	// get facade folder path
+	mi.facadesFolder = util::readStringValue(docModel, "facadesFolder");
+	mi.invalidfacadesFolder = util::readStringValue(docModel, "invalidfacadesFolder");
+	mi.chipsFolder = util::readStringValue(docModel, "chipsFolder");
+	mi.segsFolder = util::readStringValue(docModel, "segsFolder");
+	mi.dnnsInFolder = util::readStringValue(docModel, "dnnsInFolder");
+	mi.dnnsOutFolder = util::readStringValue(docModel, "dnnsOutFolder");
+	mi.dilatesFolder = util::readStringValue(docModel, "dilatesFolder");
+	mi.alignsFolder = util::readStringValue(docModel, "alignsFolder");
+	// get grammars
+	for (int i = 0; i < mi.number_grammars; i++) {
+		std::string grammar_name = "grammar" + std::to_string(i + 1);
+		rapidjson::Value& grammar = grammars[grammar_name.c_str()];
+		// path of DN model
+		mi.grammars[i].grammar_id = i + 1;
+		std::string model_path = util::readStringValue(grammar, "model");
+		mi.grammars[i].grammar_model = torch::jit::load(model_path);
+		mi.grammars[i].grammar_model->to(at::kCUDA);
+		assert(mi.grammars[i].grammar_model != nullptr);
+		// number of paras
+		mi.grammars[i].number_paras = util::readNumber(grammar, "number_paras", 5);
+		if (i == 0 || i == 1) {
+			// range of Rows
+			mi.grammars[i].rangeOfRows = util::read1DArray(grammar, "rangeOfRows");
+			// range of Cols
+			mi.grammars[i].rangeOfCols = util::read1DArray(grammar, "rangeOfCols");
+			// range of relativeW
+			mi.grammars[i].relativeWidth = util::read1DArray(grammar, "relativeWidth");
+			// range of relativeH
+			mi.grammars[i].relativeHeight = util::read1DArray(grammar, "relativeHeight");
+			if (i == 1) {
+				// range of Doors
+				mi.grammars[i].rangeOfDoors = util::read1DArray(grammar, "rangeOfDoors");
+				// relativeDWidth
+				mi.grammars[i].relativeDWidth = util::read1DArray(grammar, "relativeDWidth");
+				// relativeDHeight
+				mi.grammars[i].relativeDHeight = util::read1DArray(grammar, "relativeDHeight");
+			}
+		}
+		else if (i == 2 || i == 3) {
+			// range of Cols
+			mi.grammars[i].rangeOfCols = util::read1DArray(grammar, "rangeOfCols");
+			// range of relativeW
+			mi.grammars[i].relativeWidth = util::read1DArray(grammar, "relativeWidth");
+			if (i == 3) {
+				// range of Doors
+				mi.grammars[i].rangeOfDoors = util::read1DArray(grammar, "rangeOfDoors");
+				// relativeDWidth
+				mi.grammars[i].relativeDWidth = util::read1DArray(grammar, "relativeDWidth");
+				// relativeDHeight
+				mi.grammars[i].relativeDHeight = util::read1DArray(grammar, "relativeDHeight");
+			}
+		}
+		else {
+			// range of Rows
+			mi.grammars[i].rangeOfRows = util::read1DArray(grammar, "rangeOfRows");
+			// range of relativeH
+			mi.grammars[i].relativeHeight = util::read1DArray(grammar, "relativeHeight");
+			if (i == 5) {
+				// range of Doors
+				mi.grammars[i].rangeOfDoors = util::read1DArray(grammar, "rangeOfDoors");
+				// relativeDWidth
+				mi.grammars[i].relativeDWidth = util::read1DArray(grammar, "relativeDWidth");
+				// relativeDHeight
+				mi.grammars[i].relativeDHeight = util::read1DArray(grammar, "relativeDHeight");
+			}
+
+		}
+	}
 }

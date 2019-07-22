@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0 FATAL_ERROR)
-set(CMAKE_PREFIX_PATH /usr/local/libtorch)
+set(CMAKE_PREFIX_PATH /usr/local/libtorch_cuda)
 set(CMAKE_CXX_STANDARD 14)
 
 project(facadeSynthLEGO)
@@ -15,7 +15,8 @@ find_package(dlib 19.17 REQUIRED)
 set(SOURCES
 	src/main.cpp
 	src/building.cpp
-	src/dn_predict.cpp)
+	src/dn_predict.cpp
+	src/utils.cpp)
 
 add_executable(facadeSynthLEGO ${SOURCES})
 target_link_libraries(facadeSynthLEGO ${TORCH_LIBRARIES})
