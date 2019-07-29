@@ -344,18 +344,6 @@ void Building::synthFacades() {
 		// Skip roofs
 		if (fp.roof) continue;
 
-		// Brighten any dark facades
-		float brt = glm::dot(fp.bg_color, glm::vec3(1.0f)) / 3.0f;
-		if (brt < 0.3f) {
-			if (brt > 0.0f) fp.bg_color *= 0.5f / brt;
-			// Reduce saturation
-			float avg = glm::dot(fp.bg_color, glm::vec3(1.0f)) / 3.0f;
-			fp.bg_color += (glm::vec3(avg) - fp.bg_color) * 0.8f;
-
-			fp.bg_color = glm::clamp(fp.bg_color, 0.0f, 1.0f);
-		}
-		fp.win_color = fp.bg_color * 0.6f;
-
 		// Get section boundaries along X
 		auto sepCmp = [](const float& a, const float& b) -> bool {
 			static const float eps = 1e-2;
