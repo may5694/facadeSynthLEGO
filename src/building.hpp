@@ -74,6 +74,7 @@ struct FacadeInfo {
 	// Estimated params
 	float score;				// Score of the facade image
 	bool valid;					// Whether parameters are valid
+	float good_conf;			// confidence value for the good facade
 	int grammar;				// Procedural grammar to use
 	std::array<float, 6> conf;	// Grammar confidence values
 	glm::vec2 chip_size;		// Width, height of selected chip (rUTM)

@@ -1,7 +1,7 @@
 build/
 debug/
 fig/
-lego_root/
+lego_root*/
 networks/
 output/
 .lego_root.backup*/

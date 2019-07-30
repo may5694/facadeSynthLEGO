@@ -1284,6 +1284,7 @@ FacadeInfo::FacadeInfo() :
 	roof(false),
 	score(0.0),
 	valid(false),
+	good_conf(0.0),
 	grammar(0),
 	conf({}),
 	bg_color(0.7f),

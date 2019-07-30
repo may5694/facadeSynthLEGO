@@ -17,7 +17,7 @@ void dn_predict(FacadeInfo& fi, ModelInfo& mi);
 
 /**** helper functions *****/
 int reject(cv::Mat src_img, std::vector<double> facadeSize, std::vector<double> targetSize, double score, bool bDebug);
-int reject(cv::Mat src_img, ModelInfo& mi, std::vector<double> facadeSize, std::vector<double> targetSize, std::vector<double> defaultImgSize, bool bDebug);
+int reject(cv::Mat src_img, FacadeInfo& fi, ModelInfo& mi, bool bDebug);
 cv::Mat cleanAlignedImage(cv::Mat src, float threshold);
 cv::Mat deSkewImg(cv::Mat src_img);
 void apply_segmentation_model(cv::Mat &croppedImage, cv::Mat &chip_seg, ModelInfo& mi, bool bDebug);

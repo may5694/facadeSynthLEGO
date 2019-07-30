@@ -15,8 +15,8 @@
 		"grammar2":{
 			"model":"networks/gpu/lego_model_grammar2.pt",
 			"number_paras":7,
-			"rangeOfRows":[3,12],
-			"rangeOfCols":[3,12],
+			"rangeOfRows":[2,12],
+			"rangeOfCols":[2,12],
 			"rangeOfDoors":[2,6],
 			"relativeWidth":[0.3, 0.9],
 			"relativeHeight":[0.3, 0.9],
@@ -32,7 +32,7 @@
 		"grammar4":{
 			"model":"networks/gpu/lego_model_grammar4.pt",
 			"number_paras":5,
-			"rangeOfCols":[3,12],
+			"rangeOfCols":[2,12],
 			"rangeOfDoors":[2,6],
 			"relativeWidth":[0.3, 0.9],
 			"relativeDWidth":[0.7, 0.9],
@@ -47,7 +47,7 @@
 		"grammar6":{
 			"model":"networks/gpu/lego_model_grammar6.pt",
 			"number_paras":5,
-			"rangeOfRows":[3,12],
+			"rangeOfRows":[2,12],
 			"rangeOfDoors":[2,6],
 			"relativeHeight":[0.3, 0.9],
 			"relativeDWidth":[0.7, 0.9],
