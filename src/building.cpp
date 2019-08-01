@@ -281,6 +281,16 @@ void Building::synthFacades() {
 	vector<FacadeGroup> facadeGroups;
 	map<int, int> whichGroup;		// Maps facade ID to group ID
 
+	// Create groups output directory
+	fs::path groupsDir;
+	if (debugOut) {
+		groupsDir = debugDir / "groups";
+		if (fs::exists(groupsDir))
+			fs::remove_all(groupsDir);
+		fs::create_directory(groupsDir);
+	}
+
+
 	for (auto& fi : facadeInfo) {
 		auto& fp = fi.second;
 		// Skip roofs
@@ -410,6 +420,7 @@ void Building::synthFacades() {
 	}		// for (auto& fi : facadeInfo) {
 
 	// Determine group grammar and parameters
+	int gid = 0;
 	for (auto& fg : facadeGroups) {
 		// Get the grammar with the highest total score
 		float maxG = 0.1;
@@ -425,64 +436,84 @@ void Building::synthFacades() {
 				fg.grammar++;
 		fg.hasDoors = (fg.grammar == 2 || fg.grammar == 4 || fg.grammar == 6);
 
-		// Group is valid if frammar is non-zero
+		// Group is valid if grammar is non-zero
 		fg.valid = (fg.grammar > 0);
-		if (!fg.valid) continue;
 
-		// Average out the parameter values for selected grammar
-		int sz = 0;
-		int szd = 0;
-		for (auto fi : fg.facades) {
-			auto& fp = facadeInfo[fi];
-			// Average window params with compatible estimations within this group
-			if (fp.grammar && (fp.grammar - 1) / 2 == (fg.grammar - 1) / 2) {
-				sz++;
-				// Adjust number of rows if there's doors
-				if (fp.grammar == 2 || fp.grammar == 4 || fp.grammar == 6)
-					fg.avgRowsPerMeter += fp.rows / (fp.chip_size.y * (1.0 - fp.relativeDHeight));
-				else
-					fg.avgRowsPerMeter += fp.rows / fp.chip_size.y;
-				fg.avgColsPerMeter += fp.cols / fp.chip_size.x;
-				fg.avgRelWidth += fp.relativeWidth;
-				fg.avgRelHeight += fp.relativeHeight;
-			}
-			// Average door params over any facades with doors
-			if (fp.grammar == 2 || fp.grammar == 4 || fp.grammar == 6) {
-				szd++;
-				fg.avgDoorsPerMeter += fp.doors / fp.chip_size.x;
-				fg.avgRelDWidth += fp.relativeDWidth;
-				fg.avgDHeight += fp.relativeDHeight * fp.chip_size.y;
-			}
-		}
-		fg.avgRowsPerMeter /= sz;
-		fg.avgColsPerMeter /= sz;
-		fg.avgRelWidth /= sz;
-		fg.avgRelHeight /= sz;
-		if (szd) {
-			fg.avgDoorsPerMeter /= szd;
-			fg.avgRelDWidth /= szd;
-			fg.avgDHeight /= szd;
-		}
-
-		// Calculate y offset
-		if (fg.grammar != 3 && fg.grammar != 4) {
-			// Get tallest facade in this group
-			float minZts = 0.0;
-			float maxHts = 0.0;
+		if (fg.valid) {
+			// Average out the parameter values for selected grammar
+			int sz = 0;
+			int szd = 0;
 			for (auto fi : fg.facades) {
 				auto& fp = facadeInfo[fi];
-				for (auto& ws : facadeSections[fi]) {
-					if (ws.maxBB.y - ws.minBB.y > maxHts) {
-						maxHts = ws.maxBB.y - ws.minBB.y;
-						minZts = fp.zBB_utm.x + ws.minBB.y;
-					}
+				// Average window params with compatible estimations within this group
+				if (fp.grammar && (fp.grammar - 1) / 2 == (fg.grammar - 1) / 2) {
+					sz++;
+					// Adjust number of rows if there's doors
+					if (fp.grammar == 2 || fp.grammar == 4 || fp.grammar == 6)
+						fg.avgRowsPerMeter += fp.rows / (fp.chip_size.y * (1.0 - fp.relativeDHeight));
+					else
+						fg.avgRowsPerMeter += fp.rows / fp.chip_size.y;
+					fg.avgColsPerMeter += fp.cols / fp.chip_size.x;
+					fg.avgRelWidth += fp.relativeWidth;
+					fg.avgRelHeight += fp.relativeHeight;
+				}
+				// Average door params over any facades with doors
+				if (fp.grammar == 2 || fp.grammar == 4 || fp.grammar == 6) {
+					szd++;
+					fg.avgDoorsPerMeter += fp.doors / fp.chip_size.x;
+					fg.avgRelDWidth += fp.relativeDWidth;
+					fg.avgDHeight += fp.relativeDHeight * fp.chip_size.y;
 				}
 			}
+			fg.avgRowsPerMeter /= sz;
+			fg.avgColsPerMeter /= sz;
+			fg.avgRelWidth /= sz;
+			fg.avgRelHeight /= sz;
+			if (szd) {
+				fg.avgDoorsPerMeter /= szd;
+				fg.avgRelDWidth /= szd;
+				fg.avgDHeight /= szd;
+			}
 
-			int rows = floor(maxHts * fg.avgRowsPerMeter);
-			fg.yoffset = (maxHts - rows / fg.avgRowsPerMeter) / 2 + minZts;
-			fg.yoffset = fg.yoffset - floor(fg.yoffset * fg.avgRowsPerMeter) / fg.avgRowsPerMeter;
+			// Calculate y offset
+			if (fg.grammar != 3 && fg.grammar != 4) {
+				// Get tallest facade in this group
+				float minZts = 0.0;
+				float maxHts = 0.0;
+				for (auto fi : fg.facades) {
+					auto& fp = facadeInfo[fi];
+					for (auto& ws : facadeSections[fi]) {
+						if (ws.maxBB.y - ws.minBB.y > maxHts) {
+							maxHts = ws.maxBB.y - ws.minBB.y;
+							minZts = fp.zBB_utm.x + ws.minBB.y;
+						}
+					}
+				}
+
+				int rows = floor(maxHts * fg.avgRowsPerMeter);
+				fg.yoffset = (maxHts - rows / fg.avgRowsPerMeter) / 2 + minZts;
+				fg.yoffset = fg.yoffset - floor(fg.yoffset * fg.avgRowsPerMeter) / fg.avgRowsPerMeter;
+			}
 		}
+
+		// Debug output
+		if (debugOut) {
+			stringstream ss;
+			ss << setw(4) << setfill('0') << gid;
+
+			json groupinfo;
+			groupinfo["facades"] = fg.facades;
+			groupinfo["grammars"] = fg.grammars;
+			groupinfo["sheights"] = fg.sheights;
+			groupinfo["yoffset"] = fg.yoffset;
+			groupinfo["valid"] = fg.valid;
+			groupinfo["grammar"] = fg.grammar;
+
+			fs::path groupPath = groupsDir / (ss.str() + ".json");
+			ofstream groupFile(groupPath);
+			groupFile << setw(4) << groupinfo << endl;
+		}
+		gid++;
 	}		// for (auto& fg : facadeGroups) {
 
 
