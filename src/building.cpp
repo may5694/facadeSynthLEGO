@@ -273,10 +273,12 @@ void Building::synthFacades() {
 		float avgRelDWidth;
 		float avgDHeight;			// Not relative D height; chip size differs
 
+		glm::vec3 winColScale;		// Scale bg_color by this to get win_color
+
 		FacadeGroup(decltype(heightCmp) cmp) : grammars(7, 0.0), sheights(cmp), yoffset(0.0),
 			valid(false), grammar(0), avgRowsPerMeter(0.0), avgColsPerMeter(0.0),
 			avgRelWidth(0.0), avgRelHeight(0.0), hasDoors(false), avgDoorsPerMeter(0.0),
-			avgRelDWidth(0.0), avgDHeight(0.0) {}
+			avgRelDWidth(0.0), avgDHeight(0.0), winColScale(0.0) {}
 	};
 	vector<FacadeGroup> facadeGroups;
 	map<int, int> whichGroup;		// Maps facade ID to group ID
@@ -445,6 +447,7 @@ void Building::synthFacades() {
 			// Average out the parameter values for selected grammar
 			int sz = 0;
 			int szd = 0;
+			int szc = 0;
 			for (auto fi : fg.facades) {
 				auto& fp = facadeInfo[fi];
 				// Average window params with compatible estimations within this group
@@ -466,6 +469,11 @@ void Building::synthFacades() {
 					fg.avgRelDWidth += fp.relativeDWidth;
 					fg.avgDHeight += fp.relativeDHeight * fp.chip_size.y;
 				}
+				// Average window color scale factor
+				if (fp.grammar) {
+					szc++;
+					fg.winColScale += fp.win_color / fp.bg_color;
+				}
 			}
 			fg.avgRowsPerMeter /= sz;
 			fg.avgColsPerMeter /= sz;
@@ -476,6 +484,7 @@ void Building::synthFacades() {
 				fg.avgRelDWidth /= szd;
 				fg.avgDHeight /= szd;
 			}
+			fg.winColScale /= szc;
 
 			// Calculate y offset
 			if (fg.grammar != 3 && fg.grammar != 4) {
@@ -545,6 +554,10 @@ void Building::synthFacades() {
 			float doorH = fg.avgDHeight;
 			float doorXsep = doorCellW * (1.0 - fg.avgRelDWidth);
 			float doorXoff = doorXsep / 2.0;
+
+			// Get window color if we don't already have one
+			if (!fp.valid)
+				fp.win_color = fp.bg_color * fg.winColScale;
 
 			auto& xform = fp.rectXform;
 			auto& invXform = fp.iRectXform;
