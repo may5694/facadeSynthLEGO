@@ -28,6 +28,9 @@ public:
 	void estimParams(ModelInfo& mi);
 	void synthFacades();
 
+	// Debug output
+	void outputMetadata();
+
 private:
 
 	// Geometry buffers

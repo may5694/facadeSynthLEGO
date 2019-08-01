@@ -169,15 +169,6 @@ void Building::scoreFacades() {
 
 // Estimate facade parameters for each facade
 void Building::estimParams(ModelInfo& mi) {
-	// Create debug metadata directory
-	fs::path metaDir;
-	if (debugOut) {
-		metaDir = debugDir / "metadata";
-		if (fs::exists(metaDir))
-			fs::remove_all(metaDir);
-		fs::create_directory(metaDir);
-	}
-
 	// Loop over all facades
 	int i = 1;
 	for (auto& fi : facadeInfo) {
@@ -188,55 +179,6 @@ void Building::estimParams(ModelInfo& mi) {
 		if (!(fi.second.roof || fi.second.inscRect_px.width < 2 || fi.second.inscRect_px.height < 2))
 			// Predict facade parameters
 			dn_predict(fi.second, mi);
-
-		// Metadata output
-		if (debugOut) {
-			stringstream ss;
-			ss << setw(4) << setfill('0') << fi.first;
-
-			json metadata;
-			metadata["facade"] = fi.first;
-			metadata["roof"] = fi.second.roof;
-			metadata["crop"][0] = fi.second.inscRect_px.x;
-			metadata["crop"][1] = fi.second.inscRect_px.y;
-			metadata["crop"][2] = fi.second.inscRect_px.width;
-			metadata["crop"][3] = fi.second.inscRect_px.height;
-			metadata["size"][0] = fi.second.inscSize_utm.x;
-			metadata["size"][1] = fi.second.inscSize_utm.y;
-			metadata["ground"] = fi.second.inscGround;
-			metadata["score"] = fi.second.score;
-			metadata["imagename"] = (debugDir / "chip" / (ss.str() + ".png")).string();
-			metadata["valid"] = fi.second.valid;
-			metadata["bg_color"][0] = fi.second.bg_color.b * 255;
-			metadata["bg_color"][1] = fi.second.bg_color.g * 255;
-			metadata["bg_color"][2] = fi.second.bg_color.r * 255;
-			if (fi.second.valid) {
-				metadata["grammar"] = fi.second.grammar;
-				metadata["chip_size"][0] = fi.second.chip_size.x;
-				metadata["chip_size"][1] = fi.second.chip_size.y;
-				metadata["window_color"][0] = fi.second.win_color.b * 255;
-				metadata["window_color"][1] = fi.second.win_color.g * 255;
-				metadata["window_color"][2] = fi.second.win_color.r * 255;
-				metadata["confidences"][0] = fi.second.conf[0];
-				metadata["confidences"][1] = fi.second.conf[1];
-				metadata["confidences"][2] = fi.second.conf[2];
-				metadata["confidences"][3] = fi.second.conf[3];
-				metadata["confidences"][4] = fi.second.conf[4];
-				metadata["confidences"][5] = fi.second.conf[5];
-				metadata["paras"]["rows"] = fi.second.rows;
-				metadata["paras"]["cols"] = fi.second.cols;
-				metadata["paras"]["grouping"] = fi.second.grouping;
-				metadata["paras"]["relativeWidth"] = fi.second.relativeWidth;
-				metadata["paras"]["relativeHeight"] = fi.second.relativeHeight;
-				metadata["paras"]["doors"] = fi.second.doors;
-				metadata["paras"]["relativeDWidth"] = fi.second.relativeDWidth;
-				metadata["paras"]["relativeDHeight"] = fi.second.relativeDHeight;
-			}
-
-			fs::path metaPath = metaDir / (ss.str() + ".json");
-			ofstream metaFile(metaPath);
-			metaFile << setw(4) << metadata << endl;
-		}
 	}
 	cout << endl;
 }
@@ -990,6 +932,66 @@ void Building::synthFacades() {
 	cv::imwrite(texPath.string(), synthAtlasImg);
 }
 
+void Building::outputMetadata() {
+	// Do nothing if no debug output
+	if (!debugOut) return;
+
+	// Create debug metadata directory
+	fs::path metaDir = debugDir / "metadata";
+	if (fs::exists(metaDir))
+		fs::remove_all(metaDir);
+	fs::create_directory(metaDir);
+
+	// Loop over all facades
+	for (auto& fi : facadeInfo) {
+		stringstream ss;
+		ss << setw(4) << setfill('0') << fi.first;
+
+		json metadata;
+		metadata["facade"] = fi.first;
+		metadata["roof"] = fi.second.roof;
+		metadata["crop"][0] = fi.second.inscRect_px.x;
+		metadata["crop"][1] = fi.second.inscRect_px.y;
+		metadata["crop"][2] = fi.second.inscRect_px.width;
+		metadata["crop"][3] = fi.second.inscRect_px.height;
+		metadata["size"][0] = fi.second.inscSize_utm.x;
+		metadata["size"][1] = fi.second.inscSize_utm.y;
+		metadata["ground"] = fi.second.inscGround;
+		metadata["score"] = fi.second.score;
+		metadata["imagename"] = (debugDir / "chip" / (ss.str() + ".png")).string();
+		metadata["valid"] = fi.second.valid;
+		metadata["bg_color"][0] = fi.second.bg_color.b * 255;
+		metadata["bg_color"][1] = fi.second.bg_color.g * 255;
+		metadata["bg_color"][2] = fi.second.bg_color.r * 255;
+		if (fi.second.valid) {
+			metadata["grammar"] = fi.second.grammar;
+			metadata["chip_size"][0] = fi.second.chip_size.x;
+			metadata["chip_size"][1] = fi.second.chip_size.y;
+			metadata["window_color"][0] = fi.second.win_color.b * 255;
+			metadata["window_color"][1] = fi.second.win_color.g * 255;
+			metadata["window_color"][2] = fi.second.win_color.r * 255;
+			metadata["confidences"][0] = fi.second.conf[0];
+			metadata["confidences"][1] = fi.second.conf[1];
+			metadata["confidences"][2] = fi.second.conf[2];
+			metadata["confidences"][3] = fi.second.conf[3];
+			metadata["confidences"][4] = fi.second.conf[4];
+			metadata["confidences"][5] = fi.second.conf[5];
+			metadata["paras"]["rows"] = fi.second.rows;
+			metadata["paras"]["cols"] = fi.second.cols;
+			metadata["paras"]["grouping"] = fi.second.grouping;
+			metadata["paras"]["relativeWidth"] = fi.second.relativeWidth;
+			metadata["paras"]["relativeHeight"] = fi.second.relativeHeight;
+			metadata["paras"]["doors"] = fi.second.doors;
+			metadata["paras"]["relativeDWidth"] = fi.second.relativeDWidth;
+			metadata["paras"]["relativeDHeight"] = fi.second.relativeDHeight;
+		}
+
+		fs::path metaPath = metaDir / (ss.str() + ".json");
+		ofstream metaFile(metaPath);
+		metaFile << setw(4) << metadata << endl;
+	}
+}
+
 // Read textured model paths from metadata manifest
 void Building::readManifest(fs::path metaPath, fs::path& modelPath,
 	fs::path& texPath, fs::path& mtlPath, fs::path& surfPath) {
@@ -1079,13 +1081,6 @@ void Building::readSurfaces(fs::path surfPath) {
 	surfFile.exceptions(ios::eofbit | ios::badbit | ios::failbit);
 	surfFile.open(surfPath);
 
-//	bool debugFacades = false;
-//	fs::path debugDir = fs::path("debugFacades") / cluster;
-//	if (debugFacades) {
-//		if (!fs::exists(debugDir))
-//			fs::create_directories(debugDir);
-//	}
-
 	// Loop over all faces
 	for (size_t f = 0; f < indexBuf.size() / 3; f++) {
 		// Read the surface group this face belongs to
@@ -1153,13 +1148,6 @@ void Building::readSurfaces(fs::path surfPath) {
 
 		fa.inscGround = (fa.ground &&
 			(fa.inscRect_px.y + fa.inscRect_px.height == fa.atlasBB_px.height));
-
-//		if (debugFacades) {
-//			stringstream ss;
-//			ss << setw(4) << setfill('0') << fi.first;
-//			fs::path debugPath = debugDir / (ss.str() + ".png");
-//			cv::imwrite(debugPath.string(), fa.facadeImg);
-//		}
 
 		// Get orientation matrix
 		fa.rectXform = glm::mat4(1.0);
@@ -1299,6 +1287,9 @@ void genFacadeModel(const string& model_metadata_path,
 
     // Create synthetic facades
     b.synthFacades();
+
+	// Output debug metadata
+	b.outputMetadata();
 }
 
 void readModeljson(std::string modeljson, ModelInfo& mi) {
