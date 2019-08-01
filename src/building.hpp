@@ -91,6 +91,7 @@ struct FacadeInfo {
 	int doors;					// Number of doors per chip
 	float relativeDWidth;		// Width of doors wrt cell (0, 1)
 	float relativeDHeight;		// Height of doors wrt facade chip (0, 1)
+	int groupId;				// Which group this facade is a part of (-1 for no group)
 
 	FacadeInfo();
 };

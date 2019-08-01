@@ -384,6 +384,7 @@ void Building::synthFacades() {
 					fg.sheights.insert(ts);
 
 				whichGroup[fi.first] = g;
+				fp.groupId = g;
 				inGroup = true;
 				break;
 			}
@@ -403,6 +404,7 @@ void Building::synthFacades() {
 				fg.sheights.insert(ts);
 
 			whichGroup[fi.first] = facadeGroups.size();
+			fp.groupId = facadeGroups.size();
 			facadeGroups.push_back(fg);
 		}
 	}		// for (auto& fi : facadeInfo) {
@@ -985,6 +987,7 @@ void Building::outputMetadata() {
 			metadata["paras"]["relativeDWidth"] = fi.second.relativeDWidth;
 			metadata["paras"]["relativeDHeight"] = fi.second.relativeDHeight;
 		}
+		metadata["groupId"] = fi.second.groupId;
 
 		fs::path metaPath = metaDir / (ss.str() + ".json");
 		ofstream metaFile(metaPath);
@@ -1267,7 +1270,8 @@ FacadeInfo::FacadeInfo() :
 	relativeHeight(0.0),
 	doors(0),
 	relativeDWidth(0.0),
-	relativeDHeight(0.0) {}
+	relativeDHeight(0.0),
+	groupId(-1) {}
 
 // Generate synthetic facades for the given cluster
 void genFacadeModel(const string& model_metadata_path,
