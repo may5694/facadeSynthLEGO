@@ -483,10 +483,6 @@ void Building::synthFacades() {
 
 		// Group is valid if frammar is non-zero
 		fg.valid = (fg.grammar > 0);
-		// Set facades to valid or invalid
-		for (auto fi : fg.facades)
-			facadeInfo[fi].valid = fg.valid;
-
 		if (!fg.valid) continue;
 
 		// Average out the parameter values for selected grammar
@@ -554,9 +550,8 @@ void Building::synthFacades() {
 			fiStr = ss.str();
 		}
 
-		// If valid parameters, add windows and doors
-		if (fp.valid) {
-			assert(whichGroup.count(fi.first));
+		// If valid group parameters, add windows and doors
+		if (whichGroup.count(fi.first) && facadeGroups[whichGroup[fi.first]].valid) {
 			const auto& fg = facadeGroups[whichGroup[fi.first]];
 
 			// Get sizes and spacing

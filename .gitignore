@@ -3,7 +3,7 @@ debug/
 fig/
 lego_root*/
 networks/
-output/
+output*/
 .lego_root.backup*/
 facadeSynthLEGO
 *.swp
