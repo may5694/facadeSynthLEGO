@@ -363,13 +363,13 @@ void Building::synthFacades() {
 		// Save section heights to facadeInfo
 		fp.sheights = tallestSections;
 
-		// Limit to two tallest sections
-		if (tallestSections.size() >= 2) {
-			tallestSections.resize(2);
-			// Remove smaller height if much smaller than tallest
-			if (tallestSections[1] / tallestSections[0] < 0.8)
-				tallestSections.pop_back();
-		}
+		// Remove sections shorter than 80% of tallest section
+		int s = 1;
+		for (; s < tallestSections.size(); ++s)
+			if (tallestSections[s] / tallestSections[0] < 0.8)
+				break;
+		tallestSections.resize(s);
+
 
 		// Find a group for this facade
 		bool inGroup = false;
