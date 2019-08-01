@@ -360,6 +360,8 @@ void Building::synthFacades() {
 			tallestSections.push_back(s.maxBB.y - s.minBB.y);
 		sort(tallestSections.begin(), tallestSections.end(), [](float a, float b) -> bool {
 			return b < a; });
+		// Save section heights to facadeInfo
+		fp.sheights = tallestSections;
 
 		// Limit to two tallest sections
 		if (tallestSections.size() >= 2) {
@@ -1019,6 +1021,7 @@ void Building::outputMetadata() {
 			metadata["paras"]["relativeDHeight"] = fi.second.relativeDHeight;
 		}
 		metadata["groupId"] = fi.second.groupId;
+		metadata["sheights"] = fi.second.sheights;
 
 		fs::path metaPath = metaDir / (ss.str() + ".json");
 		ofstream metaFile(metaPath);
