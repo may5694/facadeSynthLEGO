@@ -69,7 +69,7 @@
 	"defaultSize":[224, 224],
 	"paddingSize":[5, 5],
 	"segImageSize":[256, 256],
-	"targetChipSize":[20.0, 20.0],
+	"targetChipSize":[30.0, 30.0],
 	"reject_model":"networks/gpu/reject_model_classifier.pt",
 	"seg_model":"networks/gpu/seg_model.pt"
 }

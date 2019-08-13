@@ -169,6 +169,14 @@ void Building::scoreFacades() {
 
 // Estimate facade parameters for each facade
 void Building::estimParams(ModelInfo& mi) {
+	// Create debug directory
+	fs::path segDebugDir = debugDir / "seg";
+	if (debugOut) {
+		if (fs::exists(segDebugDir))
+			fs::remove_all(segDebugDir);
+		fs::create_directory(segDebugDir);
+	}
+
 	// Loop over all facades
 	int i = 1;
 	for (auto& fi : facadeInfo) {
@@ -176,9 +184,16 @@ void Building::estimParams(ModelInfo& mi) {
 		cout.flush();
 
 		// Skip roofs and very very small facades
-		if (!(fi.second.roof || fi.second.inscRect_px.width < 2 || fi.second.inscRect_px.height < 2))
+		if (!(fi.second.roof || fi.second.inscRect_px.width < 2 || fi.second.inscRect_px.height < 2)) {
+			// Get debug output prefix
+			stringstream ss;
+			ss << setw(4) << setfill('0') << fi.first;
+			string prefix;
+			if (debugOut) prefix = (segDebugDir / ss.str()).string();
+
 			// Predict facade parameters
-			dn_predict(fi.second, mi);
+			dn_predict(fi.second, mi, prefix);
+		}
 	}
 	cout << endl;
 }

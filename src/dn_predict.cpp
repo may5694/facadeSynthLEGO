@@ -6,13 +6,19 @@
 #include <dlib/rand.h>
 using namespace dlib;
 
-void dn_predict(FacadeInfo& fi, ModelInfo& mi) {
-	cv::Mat chip_seg;
-	bool bvalid = chipping(fi, mi, chip_seg, true, false);
+void dn_predict(FacadeInfo& fi, ModelInfo& mi, std::string dn_path) {
+	ChipInfo chip;
+	bool bvalid = chipping(fi, mi, chip, true, false);
 	if (bvalid) {
 		cv::Mat dnn_img;
-		process_chip(chip_seg, dnn_img, mi, false);
-		feedDnn(dnn_img, fi, mi, false);
+		process_chip(chip, mi, false);
+		feedDnn(chip, fi, mi, false);
+		if(!dn_path.empty()) {
+			cv::imwrite(dn_path + "_facade.png", fi.facadeImg(fi.inscRect_px));
+			cv::imwrite(dn_path + "_chip.png", chip.src_image);
+			cv::imwrite(dn_path + "_seg.png", chip.seg_image);
+			cv::imwrite(dn_path + "_dnnIn.png", chip.dnnIn_image);
+		}
 	}
 }
 
@@ -110,7 +116,7 @@ int reject(cv::Mat src_img, FacadeInfo& fi, ModelInfo& mi, bool bDebug) {
 	}
 }
 
-bool chipping(FacadeInfo& fi, ModelInfo& mi, cv::Mat& chip_seg, bool bMultipleChips, bool bDebug) {
+bool chipping(FacadeInfo& fi, ModelInfo& mi, ChipInfo &chip, bool bMultipleChips, bool bDebug) {
 	// size of chip
 	std::vector<double> facadeSize = { fi.inscSize_utm.x, fi.inscSize_utm.y };
 	// roof 
@@ -160,11 +166,15 @@ bool chipping(FacadeInfo& fi, ModelInfo& mi, cv::Mat& chip_seg, bool bMultipleCh
 		std::cout << "targetSize is " << targetSize << std::endl;
 	}
 	fi.valid = true;
+
 	// choose the best chip
-	std::vector<cv::Mat> cropped_chips = crop_chip_no_ground(src_facade.clone(), type, facadeSize, targetSize, bMultipleChips);
-	cv::Mat croppedImage = cropped_chips[choose_best_chip(cropped_chips, mi, bDebug)];// use the best chip to pass through those testings
-																									// segmentation
-	apply_segmentation_model(croppedImage, chip_seg, mi, bDebug);
+	std::vector<ChipInfo> cropped_chips = crop_chip_no_ground(src_facade.clone(), type, facadeSize, targetSize, bMultipleChips);
+	int best_chip_id = choose_best_chip(cropped_chips, mi, bDebug);
+	// adjust the best chip
+	cv::Mat croppedImage = cropped_chips[best_chip_id].src_image.clone();
+	cv::Mat chip_seg;
+	pre_process(chip_seg, croppedImage, mi, bDebug);
+
 	// add real chip size
 	int chip_width = croppedImage.size().width;
 	int chip_height = croppedImage.size().height;
@@ -226,19 +236,144 @@ bool chipping(FacadeInfo& fi, ModelInfo& mi, cv::Mat& chip_seg, bool bMultipleCh
 	fi.win_color.b = win_avg_color.val[0] / 255;
 	fi.win_color.g = win_avg_color.val[1] / 255;
 	fi.win_color.r = win_avg_color.val[2] / 255;
-
+	// copy info to the chip
+	chip.src_image = croppedImage.clone();
+	chip.seg_image = chip_seg.clone();
 	if (bDebug) {
 		std::cout << "Facade type is " << type << std::endl;
 	}
 	return true;
 }
 
-std::vector<cv::Mat> crop_chip_no_ground(cv::Mat src_facade, int type, std::vector<double> facadeSize, std::vector<double> targetSize, bool bMultipleChips) {
-	std::vector<cv::Mat> cropped_chips;
+void pre_process(cv::Mat &chip_seg, cv::Mat& croppedImage, ModelInfo& mi, bool bDebug) {
+	// --- step 1
+	apply_segmentation_model(croppedImage, chip_seg, mi, bDebug);
+	cv::Mat scale_img;
+	cv::resize(chip_seg, scale_img, cv::Size(mi.defaultSize[0], mi.defaultSize[1]));
+	// correct the color
+	for (int i = 0; i < scale_img.size().height; i++) {
+		for (int j = 0; j < scale_img.size().width; j++) {
+			//noise
+			if ((int)scale_img.at<uchar>(i, j) < 128) {
+				scale_img.at<uchar>(i, j) = (uchar)0;
+			}
+			else
+				scale_img.at<uchar>(i, j) = (uchar)255;
+		}
+	}
+	int dilation_type = cv::MORPH_RECT;
+	cv::Mat img_dilation;
+	int kernel_size = 3;
+	cv::Mat element = cv::getStructuringElement(dilation_type, cv::Size(kernel_size, kernel_size), cv::Point(kernel_size / 2, kernel_size / 2));
+	/// Apply the dilation operation
+	cv::dilate(scale_img, img_dilation, element);
+	cv::resize(img_dilation, img_dilation, chip_seg.size());
+	// correct the color
+	for (int i = 0; i < img_dilation.size().height; i++) {
+		for (int j = 0; j < img_dilation.size().width; j++) {
+			//noise
+			if ((int)img_dilation.at<uchar>(i, j) < 128) {
+				img_dilation.at<uchar>(i, j) = (uchar)0;
+			}
+			else
+				img_dilation.at<uchar>(i, j) = (uchar)255;
+		}
+	}
+	int padding_size = mi.paddingSize[0];
+	int borderType = cv::BORDER_CONSTANT;
+	cv::Mat padding_img;
+	cv::copyMakeBorder(img_dilation, padding_img, padding_size, padding_size, padding_size, padding_size, borderType, cv::Scalar(255, 255, 255));
+	std::vector<std::vector<cv::Point> > contours;
+	std::vector<cv::Vec4i> hierarchy;
+	cv::findContours(padding_img, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
+
+	std::vector<float> area_contours(contours.size());
+	std::vector<cv::Rect> boundRect(contours.size());
+	for (int i = 0; i < contours.size(); i++)
+	{
+		boundRect[i] = cv::boundingRect(cv::Mat(contours[i]));
+		area_contours[i] = cv::contourArea(contours[i]);
+	}
+	std::sort(area_contours.begin(), area_contours.end());
+	float target_contour_area = area_contours[area_contours.size() / 2];
+	for (int i = 0; i < contours.size(); i++)
+	{
+		float area_contour = cv::contourArea(contours[i]);
+		if (area_contour < 0.5 * target_contour_area) {
+			cv::rectangle(padding_img, cv::Point(boundRect[i].tl().x, boundRect[i].tl().y), cv::Point(boundRect[i].br().x, boundRect[i].br().y), cv::Scalar(255, 255, 255), -1);
+		}
+	}
+	chip_seg = padding_img(cv::Rect(padding_size, padding_size, chip_seg.size().width, chip_seg.size().height));
+	// --- step 2
+	std::vector<int> boundaries = adjust_chip(chip_seg.clone());
+	chip_seg = chip_seg(cv::Rect(boundaries[2], boundaries[0], boundaries[3] - boundaries[2] + 1, boundaries[1] - boundaries[0] + 1));
+	croppedImage = croppedImage(cv::Rect(boundaries[2], boundaries[0], boundaries[3] - boundaries[2] + 1, boundaries[1] - boundaries[0] + 1));
+	// ---- step 3
+	if (chip_seg.size().width < 25)
+		return;
+	std::vector<int> separation_x;
+	std::vector<int> separation_y;
+	cv::Mat spacing_img = chip_seg.clone();
+	float threshold_spacing = 0.238;
+	find_spacing(spacing_img, separation_x, separation_y, bDebug);
+	if (separation_x.size() % 2 != 0)
+		return;
+	if (separation_x.size() > 0) {
+		// compute spacing
+		std::vector<int> space_x;
+		for (int i = 0; i < separation_x.size(); i += 2) {
+			space_x.push_back(separation_x[i + 1] - separation_x[i]);
+		}
+		int max_spacing_x_id = std::max_element(space_x.begin(), space_x.end()) - space_x.begin();
+		double ratio_x = space_x[max_spacing_x_id] * 1.0 / spacing_img.size().width;
+		if (ratio_x > threshold_spacing)
+		{
+			if (space_x.size() >= 2) {
+				float average_spacing = accumulate(space_x.begin(), space_x.end(), 0.0) / space_x.size();
+				if (abs(space_x[max_spacing_x_id] - average_spacing) / spacing_img.size().width < 0.05)
+					return;
+			}
+			// split into two images
+			cv::Mat img_1_seg = spacing_img(cv::Rect(0, 0, separation_x[max_spacing_x_id * 2], spacing_img.size().height));
+			cv::Mat img_2_seg = spacing_img(cv::Rect(separation_x[max_spacing_x_id * 2 + 1], 0, spacing_img.size().width - separation_x[max_spacing_x_id * 2 + 1], spacing_img.size().height));
+			cv::Mat chip_spacing;
+			if (img_1_seg.size().width > img_2_seg.size().width) {
+				chip_spacing = croppedImage(cv::Rect(0, 0, separation_x[max_spacing_x_id * 2], spacing_img.size().height));
+				// clean up
+				std::vector<int> boundaries = adjust_chip(img_1_seg.clone());
+				img_1_seg = img_1_seg(cv::Rect(boundaries[2], boundaries[0], boundaries[3] - boundaries[2] + 1, boundaries[1] - boundaries[0] + 1));
+				chip_spacing = chip_spacing(cv::Rect(boundaries[2], boundaries[0], boundaries[3] - boundaries[2] + 1, boundaries[1] - boundaries[0] + 1));
+				chip_seg = img_1_seg.clone();
+				croppedImage = chip_spacing.clone();
+			}
+			else {
+				chip_spacing = croppedImage(cv::Rect(separation_x[max_spacing_x_id * 2 + 1], 0, spacing_img.size().width - separation_x[max_spacing_x_id * 2 + 1], spacing_img.size().height));
+				// clearn up
+				std::vector<int> boundaries = adjust_chip(img_2_seg.clone());
+				img_2_seg = img_2_seg(cv::Rect(boundaries[2], boundaries[0], boundaries[3] - boundaries[2] + 1, boundaries[1] - boundaries[0] + 1));
+				chip_spacing = chip_spacing(cv::Rect(boundaries[2], boundaries[0], boundaries[3] - boundaries[2] + 1, boundaries[1] - boundaries[0] + 1));
+				chip_seg = img_2_seg.clone();
+				croppedImage = chip_spacing.clone();
+			}
+		}
+	}
+}
+
+std::vector<ChipInfo> crop_chip_no_ground(cv::Mat src_facade, int type, std::vector<double> facadeSize, std::vector<double> targetSize, bool bMultipleChips) {
+	std::vector<ChipInfo> cropped_chips;
+	double ratio_upper = 0.95;
+	double ratio_lower = 0.05;
+	double ratio_step = 0.05;
 	double target_width = targetSize[0];
 	double target_height = targetSize[1];
 	if (type == 1) {
-		cropped_chips.push_back(src_facade);
+		ChipInfo chip;
+		chip.src_image = src_facade;
+		chip.x = 0;
+		chip.y = 0;
+		chip.width = src_facade.size().width;
+		chip.height = src_facade.size().height;
+		cropped_chips.push_back(chip);
 	}
 	else if (type == 2) {
 		double target_ratio_width = target_width / facadeSize[0];
@@ -248,20 +383,30 @@ std::vector<cv::Mat> crop_chip_no_ground(cv::Mat src_facade, int type, std::vect
 		if (facadeSize[0] < 1.6 * target_width || !bMultipleChips) {
 			double start_width_ratio = (1 - target_ratio_width) * 0.5;
 			// crop target size
-			cv::Mat tmp = src_facade(cv::Rect(src_facade.size().width * start_width_ratio, 0, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
-			cropped_chips.push_back(tmp);
+			ChipInfo chip;
+			chip.src_image = src_facade(cv::Rect(src_facade.size().width * start_width_ratio, 0, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
+			chip.x = src_facade.size().width * start_width_ratio;
+			chip.y = 0;
+			chip.width = src_facade.size().width * target_ratio_width;
+			chip.height = src_facade.size().height * target_ratio_height;
+			cropped_chips.push_back(chip);
 		}
 		else {
 			// push back multiple chips
-			int index = 0;
-			double start_width_ratio = index * 0.1; // not too left
+			int index = 1;
+			double start_width_ratio = index * ratio_lower; // not too left
 			std::vector<double> confidences;
-			while (start_width_ratio + target_ratio_width < 0.9) { // not too right
-																   // get the cropped img
-				cv::Mat tmp = src_facade(cv::Rect(src_facade.size().width * start_width_ratio, 0, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
-				cropped_chips.push_back(tmp);
+			while (start_width_ratio + target_ratio_width < ratio_upper) { // not too right
+																		   // get the cropped img
+				ChipInfo chip;
+				chip.src_image = src_facade(cv::Rect(src_facade.size().width * start_width_ratio, 0, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));;
+				chip.x = src_facade.size().width * start_width_ratio;
+				chip.y = 0;
+				chip.width = src_facade.size().width * target_ratio_width;
+				chip.height = src_facade.size().height * target_ratio_height;
+				cropped_chips.push_back(chip);
 				index++;
-				start_width_ratio = index * 0.1;
+				start_width_ratio = index * ratio_step;
 			}
 		}
 	}
@@ -272,19 +417,29 @@ std::vector<cv::Mat> crop_chip_no_ground(cv::Mat src_facade, int type, std::vect
 			target_ratio_width = 1.0;
 		if (facadeSize[1] < 1.6 * target_height || !bMultipleChips) {
 			double start_height_ratio = (1 - target_ratio_height) * 0.5;
-			cv::Mat tmp = src_facade(cv::Rect(0, src_facade.size().height * start_height_ratio, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
-			cropped_chips.push_back(tmp);
+			ChipInfo chip;
+			chip.src_image = src_facade(cv::Rect(0, src_facade.size().height * start_height_ratio, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
+			chip.x = 0;
+			chip.y = src_facade.size().height * start_height_ratio;
+			chip.width = src_facade.size().width * target_ratio_width;
+			chip.height = src_facade.size().height * target_ratio_height;
+			cropped_chips.push_back(chip);
 		}
 		else {
 			// push back multiple chips
-			int index = 0;
-			double start_height_ratio = index * 0.1;
-			while (start_height_ratio + target_ratio_height < 0.9) {
+			int index = 1;
+			double start_height_ratio = index * ratio_lower;
+			while (start_height_ratio + target_ratio_height < ratio_upper) {
 				// get the cropped img
-				cv::Mat tmp = src_facade(cv::Rect(0, src_facade.size().height * start_height_ratio, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
-				cropped_chips.push_back(tmp);
+				ChipInfo chip;
+				chip.src_image = src_facade(cv::Rect(0, src_facade.size().height * start_height_ratio, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
+				chip.x = 0;
+				chip.y = src_facade.size().height * start_height_ratio;
+				chip.width = src_facade.size().width * target_ratio_width;
+				chip.height = src_facade.size().height * target_ratio_height;
+				cropped_chips.push_back(chip);
 				index++;
-				start_height_ratio = index * 0.1;
+				start_height_ratio = index * ratio_step;
 			}
 		}
 	}
@@ -298,33 +453,48 @@ std::vector<cv::Mat> crop_chip_no_ground(cv::Mat src_facade, int type, std::vect
 			// crop target size
 			double start_width_ratio = (1 - target_ratio_width) * 0.5;
 			double start_height_ratio = (1 - target_ratio_height) * 0.5;
-			cv::Mat tmp = src_facade(cv::Rect(src_facade.size().width * start_width_ratio, src_facade.size().height * start_height_ratio, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
-			cropped_chips.push_back(tmp);
+			ChipInfo chip;
+			chip.src_image = src_facade(cv::Rect(src_facade.size().width * start_width_ratio, src_facade.size().height * start_height_ratio, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
+			chip.x = src_facade.size().width * start_width_ratio;
+			chip.y = src_facade.size().height * start_height_ratio;
+			chip.width = src_facade.size().width * target_ratio_width;
+			chip.height = src_facade.size().height * target_ratio_height;
+			cropped_chips.push_back(chip);
 		}
 		else if (bLonger_width) {
 			// check multiple chips and choose the one that has the highest confidence value
-			int index = 0;
-			double start_width_ratio = index * 0.1;
+			int index = 1;
+			double start_width_ratio = index * ratio_lower;
 			double start_height_ratio = (1 - target_ratio_height) * 0.5;
-			while (start_width_ratio + target_ratio_width < 0.9) {
+			while (start_width_ratio + target_ratio_width < ratio_upper) {
 				// get the cropped img
-				cv::Mat tmp = src_facade(cv::Rect(src_facade.size().width * start_width_ratio, src_facade.size().height * start_height_ratio, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
-				cropped_chips.push_back(tmp);
+				ChipInfo chip;
+				chip.src_image = src_facade(cv::Rect(src_facade.size().width * start_width_ratio, src_facade.size().height * start_height_ratio, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
+				chip.x = src_facade.size().width * start_width_ratio;
+				chip.y = src_facade.size().height * start_height_ratio;
+				chip.width = src_facade.size().width * target_ratio_width;
+				chip.height = src_facade.size().height * target_ratio_height;
+				cropped_chips.push_back(chip);
 				index++;
-				start_width_ratio = index * 0.1;
+				start_width_ratio = index * ratio_step;
 			}
 		}
 		else {
 			// check multiple chips and choose the one that has the highest confidence value
-			int index = 0;
-			double start_height_ratio = index * 0.1;
+			int index = 1;
+			double start_height_ratio = index * ratio_lower;
 			double start_width_ratio = (1 - target_ratio_width) * 0.5;
-			while (start_height_ratio + target_ratio_height < 0.9) {
+			while (start_height_ratio + target_ratio_height < ratio_upper) {
 				// get the cropped img
-				cv::Mat tmp = src_facade(cv::Rect(src_facade.size().width * start_width_ratio, src_facade.size().height * start_height_ratio, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
-				cropped_chips.push_back(tmp);
+				ChipInfo chip;
+				chip.src_image = src_facade(cv::Rect(src_facade.size().width * start_width_ratio, src_facade.size().height * start_height_ratio, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
+				chip.x = src_facade.size().width * start_width_ratio;
+				chip.y = src_facade.size().height * start_height_ratio;
+				chip.width = src_facade.size().width * target_ratio_width;
+				chip.height = src_facade.size().height * target_ratio_height;
+				cropped_chips.push_back(chip);
 				index++;
-				start_height_ratio = index * 0.1;
+				start_height_ratio = index * ratio_step;
 			}
 		}
 	}
@@ -334,12 +504,21 @@ std::vector<cv::Mat> crop_chip_no_ground(cv::Mat src_facade, int type, std::vect
 	return cropped_chips;
 }
 
-std::vector<cv::Mat> crop_chip_ground(cv::Mat src_facade, int type, std::vector<double> facadeSize, std::vector<double> targetSize, bool bMultipleChips) {
-	std::vector<cv::Mat> cropped_chips;
+std::vector<ChipInfo> crop_chip_ground(cv::Mat src_facade, int type, std::vector<double> facadeSize, std::vector<double> targetSize, bool bMultipleChips) {
+	double ratio_upper = 0.95;
+	double ratio_lower = 0.05;
+	double ratio_step = 0.1;
+	std::vector<ChipInfo> cropped_chips;
 	double target_width = targetSize[0];
 	double target_height = targetSize[1];
 	if (type == 1) {
-		cropped_chips.push_back(src_facade);
+		ChipInfo chip;
+		chip.src_image = src_facade;
+		chip.x = 0;
+		chip.y = 0;
+		chip.width = src_facade.size().width;
+		chip.height = src_facade.size().height;
+		cropped_chips.push_back(chip);
 	}
 	else if (type == 2) {
 		double target_ratio_width = target_width / facadeSize[0];
@@ -349,20 +528,30 @@ std::vector<cv::Mat> crop_chip_ground(cv::Mat src_facade, int type, std::vector<
 		if (facadeSize[0] < 1.6 * target_width || !bMultipleChips) {
 			double start_width_ratio = (1 - target_ratio_width) * 0.5;
 			// crop target size
-			cv::Mat tmp = src_facade(cv::Rect(src_facade.size().width * start_width_ratio, 0, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
-			cropped_chips.push_back(tmp);
+			ChipInfo chip;
+			chip.src_image = src_facade(cv::Rect(src_facade.size().width * start_width_ratio, 0, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
+			chip.x = src_facade.size().width * start_width_ratio;
+			chip.y = 0;
+			chip.width = src_facade.size().width * target_ratio_width;
+			chip.height = src_facade.size().height * target_ratio_height;
+			cropped_chips.push_back(chip);
 		}
 		else {
 			// push back multiple chips
-			int index = 0;
-			double start_width_ratio = index * 0.1; // not too left
+			int index = 1;
+			double start_width_ratio = index * ratio_lower; // not too left
 			std::vector<double> confidences;
-			while (start_width_ratio + target_ratio_width < 0.9) { // not too right
-																   // get the cropped img
-				cv::Mat tmp = src_facade(cv::Rect(src_facade.size().width * start_width_ratio, 0, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
-				cropped_chips.push_back(tmp);
+			while (start_width_ratio + target_ratio_width < ratio_upper) { // not too right
+																		   // get the cropped img
+				ChipInfo chip;
+				chip.src_image = src_facade(cv::Rect(src_facade.size().width * start_width_ratio, 0, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
+				chip.x = src_facade.size().width * start_width_ratio;
+				chip.y = 0;
+				chip.width = src_facade.size().width * target_ratio_width;
+				chip.height = src_facade.size().height * target_ratio_height;
+				cropped_chips.push_back(chip);
 				index++;
-				start_width_ratio = index * 0.1;
+				start_width_ratio = index * ratio_step;
 			}
 		}
 	}
@@ -373,8 +562,13 @@ std::vector<cv::Mat> crop_chip_ground(cv::Mat src_facade, int type, std::vector<
 			target_ratio_width = 1.0;
 		if (facadeSize[1] < 1.6 * target_height || !bMultipleChips) {
 			double start_height_ratio = (1 - target_ratio_height);
-			cv::Mat tmp = src_facade(cv::Rect(0, src_facade.size().height * start_height_ratio, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
-			cropped_chips.push_back(tmp);
+			ChipInfo chip;
+			chip.src_image = src_facade(cv::Rect(0, src_facade.size().height * start_height_ratio, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
+			chip.x = 0;
+			chip.y = src_facade.size().height * start_height_ratio;
+			chip.width = src_facade.size().width * target_ratio_width;
+			chip.height = src_facade.size().height * target_ratio_height;
+			cropped_chips.push_back(chip);
 		}
 	}
 	else if (type == 4) {
@@ -387,29 +581,44 @@ std::vector<cv::Mat> crop_chip_ground(cv::Mat src_facade, int type, std::vector<
 			// crop target size
 			double start_width_ratio = (1 - target_ratio_width) * 0.5;
 			double start_height_ratio = (1 - target_ratio_height);
-			cv::Mat tmp = src_facade(cv::Rect(src_facade.size().width * start_width_ratio, src_facade.size().height * start_height_ratio, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
-			cropped_chips.push_back(tmp);
+			ChipInfo chip;
+			chip.src_image = src_facade(cv::Rect(src_facade.size().width * start_width_ratio, src_facade.size().height * start_height_ratio, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
+			chip.x = src_facade.size().width * start_width_ratio;
+			chip.y = src_facade.size().height * start_height_ratio;
+			chip.width = src_facade.size().width * target_ratio_width;
+			chip.height = src_facade.size().height * target_ratio_height;
+			cropped_chips.push_back(chip);
 		}
 		else if (bLonger_width) {
 			// check multiple chips and choose the one that has the highest confidence value
-			int index = 0;
-			double start_width_ratio = index * 0.1;
+			int index = 1;
+			double start_width_ratio = index * ratio_lower;
 			double start_height_ratio = (1 - target_ratio_height);
-			while (start_width_ratio + target_ratio_width < 0.9) {
+			while (start_width_ratio + target_ratio_width < ratio_upper) {
 				// get the cropped img
-				cv::Mat tmp = src_facade(cv::Rect(src_facade.size().width * start_width_ratio, src_facade.size().height * start_height_ratio, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
-				cropped_chips.push_back(tmp);
+				ChipInfo chip;
+				chip.src_image = src_facade(cv::Rect(src_facade.size().width * start_width_ratio, src_facade.size().height * start_height_ratio, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
+				chip.x = src_facade.size().width * start_width_ratio;
+				chip.y = src_facade.size().height * start_height_ratio;
+				chip.width = src_facade.size().width * target_ratio_width;
+				chip.height = src_facade.size().height * target_ratio_height;
+				cropped_chips.push_back(chip);
 				index++;
-				start_width_ratio = index * 0.1;
+				start_width_ratio = index * ratio_step;
 			}
 		}
 		else {
 			// check multiple chips and choose the one that has the highest confidence value
-			int index = 0;
+			int index = 1;
 			double start_height_ratio = (1 - target_ratio_height);
 			double start_width_ratio = (1 - target_ratio_width) * 0.5;
-			cv::Mat tmp = src_facade(cv::Rect(src_facade.size().width * start_width_ratio, src_facade.size().height * start_height_ratio, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
-			cropped_chips.push_back(tmp);
+			ChipInfo chip;
+			chip.src_image = src_facade(cv::Rect(src_facade.size().width * start_width_ratio, src_facade.size().height * start_height_ratio, src_facade.size().width * target_ratio_width, src_facade.size().height * target_ratio_height));
+			chip.x = src_facade.size().width * start_width_ratio;
+			chip.y = src_facade.size().height * start_height_ratio;
+			chip.width = src_facade.size().width * target_ratio_width;
+			chip.height = src_facade.size().height * target_ratio_height;
+			cropped_chips.push_back(chip);
 		}
 	}
 	else {
@@ -418,17 +627,18 @@ std::vector<cv::Mat> crop_chip_ground(cv::Mat src_facade, int type, std::vector<
 	return cropped_chips;
 }
 
-std::vector<double> compute_chip_info(cv::Mat chip, ModelInfo& mi, bool bDebug) {
+std::vector<double> compute_chip_info(ChipInfo chip, ModelInfo& mi, bool bDebug) {
 	std::vector<double> chip_info;
-	cv::Mat chip_src = chip.clone();
-	cv::Mat chip_seg;
-	apply_segmentation_model(chip_src, chip_seg, mi, false);
-	cv::Mat dnn_img;
-	process_chip(chip_seg, dnn_img, mi, false);
+	apply_segmentation_model(chip.src_image, chip.seg_image, mi, false);
+	//adjust boundaries
+	std::vector<int> boundaries = adjust_chip(chip.seg_image.clone());
+	chip.seg_image = chip.seg_image(cv::Rect(boundaries[2], boundaries[0], boundaries[3] - boundaries[2] + 1, boundaries[1] - boundaries[0] + 1));
+	chip.src_image = chip.src_image(cv::Rect(boundaries[2], boundaries[0], boundaries[3] - boundaries[2] + 1, boundaries[1] - boundaries[0] + 1));
+	process_chip(chip, mi, false);
 	// go to grammar classifier
 	int num_classes = mi.number_grammars;
 	cv::Mat dnn_img_rgb;
-	cv::cvtColor(dnn_img.clone(), dnn_img_rgb, CV_BGR2RGB);
+	cv::cvtColor(chip.dnnIn_image.clone(), dnn_img_rgb, CV_BGR2RGB);
 	cv::Mat img_float;
 	dnn_img_rgb.convertTo(img_float, CV_32F, 1.0 / 255);
 	auto img_tensor = torch::from_blob(img_float.data, { 1, 224, 224, 3 }).to(torch::kCUDA);
@@ -458,7 +668,7 @@ std::vector<double> compute_chip_info(cv::Mat chip, ModelInfo& mi, bool bDebug) 
 	return chip_info;
 }
 
-int choose_best_chip(std::vector<cv::Mat> chips, ModelInfo& mi, bool bDebug) {
+int choose_best_chip(std::vector<ChipInfo> chips, ModelInfo& mi, bool bDebug) {
 	int best_chip_id = 0;
 	if (chips.size() == 1)
 		best_chip_id = 0;
@@ -491,65 +701,75 @@ std::vector<int> adjust_chip(cv::Mat chip) {
 		return boundaries;
 	}
 	// find the boundary
-	double threshold = 0.9;
-	bool bStopscan = false;
+	double thre_upper = 1.1; // don't apply here
+	double thre_lower = 0.1;
 	// top 
 	int pos_top = 0;
+	int black_pixels = 0;
 	for (int i = 0; i < chip.size().height; i++) {
-		if (bStopscan)
-			break;
+		black_pixels = 0;
 		for (int j = 0; j < chip.size().width; j++) {
 			if ((int)chip.at<uchar>(i, j) == 0) {
-				pos_top = i;
-				bStopscan = true;
-				break;
+				black_pixels++;
 			}
 		}
+		double ratio = black_pixels * 1.0 / chip.size().width;
+		if (ratio < thre_upper && ratio > thre_lower) {
+			pos_top = i;
+			break;
+		}
 	}
+
 	// bottom 
-	bStopscan = false;
+	black_pixels = 0;
 	int pos_bot = 0;
 	for (int i = chip.size().height - 1; i >= 0; i--) {
-		if (bStopscan)
-			break;
+		black_pixels = 0;
 		for (int j = 0; j < chip.size().width; j++) {
 			//noise
 			if ((int)chip.at<uchar>(i, j) == 0) {
-				pos_bot = i;
-				bStopscan = true;
-				break;
+				black_pixels++;
 			}
+		}
+		double ratio = black_pixels * 1.0 / chip.size().width;
+		if (ratio < thre_upper && ratio > thre_lower) {
+			pos_bot = i;
+			break;
 		}
 	}
 
 	// left
-	bStopscan = false;
+	black_pixels = 0;
 	int pos_left = 0;
 	for (int i = 0; i < chip.size().width; i++) {
-		if (bStopscan)
-			break;
+		black_pixels = 0;
 		for (int j = 0; j < chip.size().height; j++) {
 			//noise
 			if ((int)chip.at<uchar>(j, i) == 0) {
-				pos_left = i;
-				bStopscan = true;
-				break;
+				black_pixels++;
 			}
+		}
+		double ratio = black_pixels * 1.0 / chip.size().height;
+		if (ratio < thre_upper && ratio > thre_lower) {
+			pos_left = i;
+			break;
 		}
 	}
 	// right
-	bStopscan = false;
+	black_pixels = 0;
 	int pos_right = 0;
 	for (int i = chip.size().width - 1; i >= 0; i--) {
-		if (bStopscan)
-			break;
+		black_pixels = 0;
 		for (int j = 0; j < chip.size().height; j++) {
 			//noise
 			if ((int)chip.at<uchar>(j, i) == 0) {
-				pos_right = i;
-				bStopscan = true;
-				break;
+				black_pixels++;
 			}
+		}
+		double ratio = black_pixels * 1.0 / chip.size().height;
+		if (ratio < thre_upper && ratio > thre_lower) {
+			pos_right = i;
+			break;
 		}
 	}
 	boundaries[0] = pos_top;
@@ -557,6 +777,69 @@ std::vector<int> adjust_chip(cv::Mat chip) {
 	boundaries[2] = pos_left;
 	boundaries[3] = pos_right;
 	return boundaries;
+}
+
+void find_spacing(cv::Mat src_img, std::vector<int> &separation_x, std::vector<int> &separation_y, bool bDebug) {
+	if (src_img.channels() != 1) {
+		separation_x.clear();
+		separation_y.clear();
+		return;
+	}
+	// horizontal 
+	bool bSpacing_pre = false;
+	bool bSpacing_curr = false;
+	for (int i = 0; i < src_img.size().width; i++) {
+		bSpacing_curr = true;
+		for (int j = 0; j < src_img.size().height; j++) {
+			//noise
+			if (src_img.channels() == 1) {
+				if ((int)src_img.at<uchar>(j, i) == 0) {
+					bSpacing_curr = false;
+					break;
+				}
+			}
+			else {
+				if (src_img.at<cv::Vec3b>(j, i)[0] == 0 && src_img.at<cv::Vec3b>(j, i)[1] == 0 && src_img.at<cv::Vec3b>(j, i)[1] == 0) {
+					bSpacing_curr = false;
+					break;
+				}
+			}
+		}
+		if (bSpacing_pre != bSpacing_curr) {
+			separation_x.push_back(i);
+		}
+		bSpacing_pre = bSpacing_curr;
+	}
+
+	bSpacing_pre = false;
+	bSpacing_curr = false;
+	int spacing_y = -1;
+	for (int i = 0; i < src_img.size().height; i++) {
+		bSpacing_curr = true;
+		for (int j = 0; j < src_img.size().width; j++) {
+			if (src_img.channels() == 1) {
+				if ((int)src_img.at<uchar>(i, j) == 0) {
+					bSpacing_curr = false;
+					break;
+				}
+			}
+			else {
+				if (src_img.at<cv::Vec3b>(i, j)[0] == 0 && src_img.at<cv::Vec3b>(i, j)[1] == 0 && src_img.at<cv::Vec3b>(i, j)[1] == 0) {
+					bSpacing_curr = false;
+					break;
+				}
+			}
+		}
+		if (bSpacing_pre != bSpacing_curr) {
+			separation_y.push_back(i);
+		}
+		bSpacing_pre = bSpacing_curr;
+	}
+	if (bDebug) {
+		std::cout << "separation_x is " << separation_x << std::endl;
+		std::cout << "separation_y is " << separation_y << std::endl;
+	}
+	return;
 }
 
 void apply_segmentation_model(cv::Mat &croppedImage, cv::Mat &chip_seg, ModelInfo& mi, bool bDebug) {
@@ -634,20 +917,16 @@ void apply_segmentation_model(cv::Mat &croppedImage, cv::Mat &chip_seg, ModelInf
 	if (bDebug) {
 		std::cout << "num_majority is " << num_majority << std::endl;
 	}
-	//adjust boundaries
-	std::vector<int> boundaries = adjust_chip(chip_seg);
-	chip_seg = chip_seg(cv::Rect(boundaries[2], boundaries[0], boundaries[3] - boundaries[2] + 1, boundaries[1] - boundaries[0] + 1));
-	croppedImage = croppedImage(cv::Rect(boundaries[2], boundaries[0], boundaries[3] - boundaries[2] + 1, boundaries[1] - boundaries[0] + 1));
 }
 
-bool process_chip(cv::Mat chip_seg, cv::Mat& dnn_img, ModelInfo& mi, bool bDebug) {
+bool process_chip(ChipInfo &chip, ModelInfo& mi, bool bDebug) {
 	// default size for NN
 	int width = mi.defaultSize[0] - 2 * mi.paddingSize[0];
 	int height = mi.defaultSize[1] - 2 * mi.paddingSize[1];
 	cv::Scalar bg_color(255, 255, 255); // white back ground
 	cv::Scalar window_color(0, 0, 0); // black for windows
 	cv::Mat scale_img;
-	cv::resize(chip_seg, scale_img, cv::Size(width, height));
+	cv::resize(chip.seg_image, scale_img, cv::Size(width, height));
 	// correct the color
 	for (int i = 0; i < scale_img.size().height; i++) {
 		for (int j = 0; j < scale_img.size().width; j++) {
@@ -685,19 +964,30 @@ bool process_chip(cv::Mat chip_seg, cv::Mat& dnn_img, ModelInfo& mi, bool bDebug
 		boundRect[i] = cv::boundingRect(cv::Mat(contours[i]));
 	}
 	//
-	dnn_img = cv::Mat(aligned_img_padding.size(), CV_8UC3, bg_color);
+	cv::Mat dnn_img = cv::Mat(aligned_img_padding.size(), CV_8UC3, bg_color);
 	for (int i = 1; i< contours.size(); i++)
 	{
 		if (hierarchy[i][3] != 0) continue;
 		cv::rectangle(dnn_img, cv::Point(boundRect[i].tl().x, boundRect[i].tl().y), cv::Point(boundRect[i].br().x, boundRect[i].br().y), window_color, -1);
 	}
+	chip.dilation_dst = dilation_dst;
+	chip.aligned_img = aligned_img;
+	chip.dnnIn_image = dnn_img;
 	return true;
 }
 
-void feedDnn(cv::Mat dnn_img, FacadeInfo& fi, ModelInfo& mi, bool bDebug) {
+void feedDnn(ChipInfo &chip, FacadeInfo& fi, ModelInfo& mi, bool bDebug) {
 	int num_classes = mi.number_grammars;
+	// 
+	std::vector<int> separation_x;
+	std::vector<int> separation_y;
+	cv::Mat spacing_img = chip.dnnIn_image.clone();
+	find_spacing(spacing_img, separation_x, separation_y, bDebug);
+	int spacing_r = separation_y.size() / 2;
+	int spacing_c = separation_x.size() / 2;
+
 	cv::Mat dnn_img_rgb;
-	cv::cvtColor(dnn_img.clone(), dnn_img_rgb, CV_BGR2RGB);
+	cv::cvtColor(chip.dnnIn_image.clone(), dnn_img_rgb, CV_BGR2RGB);
 	cv::Mat img_float;
 	dnn_img_rgb.convertTo(img_float, CV_32F, 1.0 / 255);
 	auto img_tensor = torch::from_blob(img_float.data, { 1, 224, 224, 3 }).to(torch::kCUDA);
@@ -779,6 +1069,17 @@ void feedDnn(cv::Mat dnn_img, FacadeInfo& fi, ModelInfo& mi, bool bDebug) {
 		//do nothing
 		predictions = grammar1(mi, paras, bDebug);
 	}
+	if (best_class % 2 == 0) {
+		if (abs(predictions[0] + 1 - spacing_r) <= 1)
+			predictions[0] = spacing_r - 1;
+	}
+	else {
+		if (abs(predictions[0] - spacing_r) <= 1)
+			predictions[0] = spacing_r;
+	}
+	if (abs(predictions[1] - spacing_c) <= 1)
+		predictions[1] = spacing_c;
+
 	// write back to fi
 	for (int i = 0; i < num_classes; i++)
 		fi.conf[i] = confidence_values[i];
@@ -796,7 +1097,6 @@ void feedDnn(cv::Mat dnn_img, FacadeInfo& fi, ModelInfo& mi, bool bDebug) {
 		fi.grouping = img_groups;
 		fi.relativeWidth = relative_width;
 		fi.relativeHeight = relative_height;
-
 	}
 	if (predictions.size() == 8) {
 		int img_rows = predictions[0];
@@ -959,10 +1259,10 @@ std::vector<double> grammar1(ModelInfo& mi, std::vector<double> paras, bool bDeb
 	// relativeHeight
 	std::pair<double, double> imageRelativeHeight(mi.grammars[0].relativeHeight[0], mi.grammars[0].relativeHeight[1]);
 	int img_rows = paras[0] * (imageRows.second - imageRows.first) + imageRows.first;
-	if (paras[0] * (imageRows.second - imageRows.first) + imageRows.first - img_rows > 0.7)
+	if (paras[0] * (imageRows.second - imageRows.first) + imageRows.first - img_rows > 0.8)
 		img_rows++;
 	int img_cols = paras[1] * (imageCols.second - imageCols.first) + imageCols.first;
-	if (paras[1] * (imageCols.second - imageCols.first) + imageCols.first - img_cols > 0.7)
+	if (paras[1] * (imageCols.second - imageCols.first) + imageCols.first - img_cols > 0.8)
 		img_cols++;
 	int img_groups = 1;
 	double relative_width = paras[2] * (imageRelativeWidth.second - imageRelativeWidth.first) + imageRelativeWidth.first;
@@ -998,14 +1298,14 @@ std::vector<double> grammar2(ModelInfo& mi, std::vector<double> paras, bool bDeb
 	// relativeDHeight
 	std::pair<double, double> imageDRelativeHeight(mi.grammars[1].relativeDHeight[0], mi.grammars[1].relativeDHeight[1]);
 	int img_rows = paras[0] * (imageRows.second - imageRows.first) + imageRows.first;
-	if (paras[0] * (imageRows.second - imageRows.first) + imageRows.first - img_rows > 0.7)
+	if (paras[0] * (imageRows.second - imageRows.first) + imageRows.first - img_rows > 0.8)
 		img_rows++;
 	int img_cols = paras[1] * (imageCols.second - imageCols.first) + imageCols.first;
-	if (paras[1] * (imageCols.second - imageCols.first) + imageCols.first - img_cols > 0.7)
+	if (paras[1] * (imageCols.second - imageCols.first) + imageCols.first - img_cols > 0.8)
 		img_cols++;
 	int img_groups = 1;
 	int img_doors = paras[2] * (imageDoors.second - imageDoors.first) + imageDoors.first;
-	if (paras[2] * (imageDoors.second - imageDoors.first) + imageDoors.first - img_doors > 0.7)
+	if (paras[2] * (imageDoors.second - imageDoors.first) + imageDoors.first - img_doors > 0.8)
 		img_doors++;
 	double relative_width = paras[3] * (imageRelativeWidth.second - imageRelativeWidth.first) + imageRelativeWidth.first;
 	double relative_height = paras[4] * (imageRelativeHeight.second - imageRelativeHeight.first) + imageRelativeHeight.first;
@@ -1030,7 +1330,7 @@ std::vector<double> grammar3(ModelInfo& mi, std::vector<double> paras, bool bDeb
 	std::pair<double, double> imageRelativeWidth(mi.grammars[2].relativeWidth[0], mi.grammars[2].relativeWidth[1]);
 	int img_rows = 1;
 	int img_cols = paras[0] * (imageCols.second - imageCols.first) + imageCols.first;
-	if (paras[0] * (imageCols.second - imageCols.first) + imageCols.first - img_cols > 0.7)
+	if (paras[0] * (imageCols.second - imageCols.first) + imageCols.first - img_cols > 0.8)
 		img_cols++;
 	int img_groups = 1;
 	double relative_width = paras[1] * (imageRelativeWidth.second - imageRelativeWidth.first) + imageRelativeWidth.first;
@@ -1057,11 +1357,11 @@ std::vector<double> grammar4(ModelInfo& mi, std::vector<double> paras, bool bDeb
 	std::pair<double, double> imageDRelativeHeight(mi.grammars[3].relativeDHeight[0], mi.grammars[3].relativeDHeight[1]);
 	int img_rows = 1;;
 	int img_cols = paras[0] * (imageCols.second - imageCols.first) + imageCols.first;
-	if (paras[0] * (imageCols.second - imageCols.first) + imageCols.first - img_cols > 0.7)
+	if (paras[0] * (imageCols.second - imageCols.first) + imageCols.first - img_cols > 0.8)
 		img_cols++;
 	int img_groups = 1;
 	int img_doors = paras[1] * (imageDoors.second - imageDoors.first) + imageDoors.first;
-	if (paras[1] * (imageDoors.second - imageDoors.first) + imageDoors.first - img_doors > 0.7)
+	if (paras[1] * (imageDoors.second - imageDoors.first) + imageDoors.first - img_doors > 0.8)
 		img_doors++;
 	double relative_width = paras[2] * (imageRelativeWidth.second - imageRelativeWidth.first) + imageRelativeWidth.first;
 	double relative_height = 1.0;
@@ -1085,7 +1385,7 @@ std::vector<double> grammar5(ModelInfo& mi, std::vector<double> paras, bool bDeb
 	// relativeHeight
 	std::pair<double, double> imageRelativeHeight(mi.grammars[4].relativeHeight[0], mi.grammars[4].relativeHeight[1]);
 	int img_rows = paras[0] * (imageRows.second - imageRows.first) + imageRows.first;
-	if (paras[0] * (imageRows.second - imageRows.first) + imageRows.first - img_rows > 0.7)
+	if (paras[0] * (imageRows.second - imageRows.first) + imageRows.first - img_rows > 0.8)
 		img_rows++;
 	int img_cols = 1;
 	int img_groups = 1;
@@ -1112,12 +1412,12 @@ std::vector<double> grammar6(ModelInfo& mi, std::vector<double> paras, bool bDeb
 	// relativeDHeight
 	std::pair<double, double> imageDRelativeHeight(mi.grammars[5].relativeDHeight[0], mi.grammars[5].relativeDHeight[1]);
 	int img_rows = paras[0] * (imageRows.second - imageRows.first) + imageRows.first;
-	if (paras[0] * (imageRows.second - imageRows.first) + imageRows.first - img_rows > 0.7)
+	if (paras[0] * (imageRows.second - imageRows.first) + imageRows.first - img_rows > 0.8)
 		img_rows++;
 	int img_cols = 1;
 	int img_groups = 1;
 	int img_doors = paras[1] * (imageDoors.second - imageDoors.first) + imageDoors.first;
-	if (paras[1] * (imageDoors.second - imageDoors.first) + imageDoors.first - img_doors > 0.7)
+	if (paras[1] * (imageDoors.second - imageDoors.first) + imageDoors.first - img_doors > 0.8)
 		img_doors++;
 	double relative_width = 1.0;
 	double relative_height = paras[2] * (imageRelativeHeight.second - imageRelativeHeight.first) + imageRelativeHeight.first;
