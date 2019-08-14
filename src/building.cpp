@@ -1191,7 +1191,8 @@ void Building::readSurfaces(fs::path surfPath) {
 		// Get average normal
 		fa.normal = glm::normalize(avgNorm / wt);
 		fa.ground = (fa.zBB_utm.x - minBB_utm.z < 1e-3);
-		fa.roof = (glm::dot(fa.normal, { 0.0, 0.0, 1.0 }) > 0.707f);
+		// Call it a roof if it's even slightly slanted
+		fa.roof = (glm::dot(fa.normal, { 0.0, 0.0, 1.0 }) > 0.1f);
 
 		// Get atlas UV bounding box
 		fa.atlasBB_uv.x = minBB_uv.x;
