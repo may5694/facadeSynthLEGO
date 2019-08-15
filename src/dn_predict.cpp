@@ -780,10 +780,13 @@ std::vector<int> adjust_chip(cv::Mat chip) {
 }
 
 void find_spacing(cv::Mat src_img, std::vector<int> &separation_x, std::vector<int> &separation_y, bool bDebug) {
-	if (src_img.channels() != 1) {
+	if (src_img.channels() == 4) {
 		separation_x.clear();
 		separation_y.clear();
 		return;
+	}
+	if (src_img.channels() == 3) {
+		cv::cvtColor(src_img, src_img, CV_BGR2GRAY);
 	}
 	// horizontal 
 	bool bSpacing_pre = false;
@@ -1070,16 +1073,15 @@ void feedDnn(ChipInfo &chip, FacadeInfo& fi, ModelInfo& mi, bool bDebug) {
 		predictions = grammar1(mi, paras, bDebug);
 	}
 	if (best_class % 2 == 0) {
-		if (abs(predictions[0] + 1 - spacing_r) <= 1)
+		if (abs(predictions[0] + 1 - spacing_r) <= 1 && predictions[0] > 1)
 			predictions[0] = spacing_r - 1;
 	}
 	else {
-		if (abs(predictions[0] - spacing_r) <= 1)
+		if (abs(predictions[0] - spacing_r) <= 1 && predictions[0] > 1)
 			predictions[0] = spacing_r;
 	}
-	if (abs(predictions[1] - spacing_c) <= 1)
+	if (abs(predictions[1] - spacing_c) <= 1 && predictions[1] > 1)
 		predictions[1] = spacing_c;
-
 	// write back to fi
 	for (int i = 0; i < num_classes; i++)
 		fi.conf[i] = confidence_values[i];
