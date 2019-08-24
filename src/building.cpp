@@ -405,9 +405,9 @@ void Building::synthFacades() {
 				fg.facades.push_back(fi.first);
 
 				if (fp.valid)
-					fg.grammars[fp.grammar] = max(fg.grammars[fp.grammar], fp.score);
+					fg.grammars[fp.grammar] = max(fg.grammars[fp.grammar], fp.good_conf);
 				else
-					fg.grammars[0] = max(fg.grammars[0], fp.score);
+					fg.grammars[0] = max(fg.grammars[0], fp.good_conf);
 
 				for (auto ts : tallestSections)
 					fg.sheights.insert(ts);
@@ -425,9 +425,9 @@ void Building::synthFacades() {
 			fg.facades.push_back(fi.first);
 
 			if (fp.valid)
-				fg.grammars[fp.grammar] += fp.score;
+				fg.grammars[fp.grammar] += fp.good_conf;
 			else
-				fg.grammars[0] += fp.score;
+				fg.grammars[0] += fp.good_conf;
 
 			for (auto ts : tallestSections)
 				fg.sheights.insert(ts);
@@ -467,27 +467,27 @@ void Building::synthFacades() {
 				auto& fp = facadeInfo[fi];
 				// Average window params with compatible estimations within this group
 				if (fp.grammar && (fp.grammar - 1) / 2 == (fg.grammar - 1) / 2) {
-					sz += fp.score;
+					sz += fp.good_conf;
 					// Adjust number of rows if there's doors
 					if (fp.grammar == 2 || fp.grammar == 4 || fp.grammar == 6)
-						fg.avgRowsPerMeter += fp.rows / (fp.chip_size.y * (1.0 - fp.relativeDHeight)) * fp.score;
+						fg.avgRowsPerMeter += fp.rows / (fp.chip_size.y * (1.0 - fp.relativeDHeight)) * fp.good_conf;
 					else
-						fg.avgRowsPerMeter += fp.rows / fp.chip_size.y * fp.score;
-					fg.avgColsPerMeter += fp.cols / fp.chip_size.x * fp.score;
-					fg.avgRelWidth += fp.relativeWidth * fp.score;
-					fg.avgRelHeight += fp.relativeHeight * fp.score;
+						fg.avgRowsPerMeter += fp.rows / fp.chip_size.y * fp.good_conf;
+					fg.avgColsPerMeter += fp.cols / fp.chip_size.x * fp.good_conf;
+					fg.avgRelWidth += fp.relativeWidth * fp.good_conf;
+					fg.avgRelHeight += fp.relativeHeight * fp.good_conf;
 				}
 				// Average door params over any facades with doors
 				if (fp.grammar == 2 || fp.grammar == 4 || fp.grammar == 6) {
-					szd += fp.score;
-					fg.avgDoorsPerMeter += fp.doors / fp.chip_size.x * fp.score;
-					fg.avgRelDWidth += fp.relativeDWidth * fp.score;
-					fg.avgDHeight += fp.relativeDHeight * fp.chip_size.y * fp.score;
+					szd += fp.good_conf;
+					fg.avgDoorsPerMeter += fp.doors / fp.chip_size.x * fp.good_conf;
+					fg.avgRelDWidth += fp.relativeDWidth * fp.good_conf;
+					fg.avgDHeight += fp.relativeDHeight * fp.chip_size.y * fp.good_conf;
 				}
 				// Average window color scale factor
 				if (fp.grammar) {
-					szc += fp.score;
-					fg.winColScale += fp.win_color / fp.bg_color * fp.score;
+					szc += fp.good_conf;
+					fg.winColScale += fp.win_color / fp.bg_color * fp.good_conf;
 				}
 			}
 			fg.avgRowsPerMeter /= sz;
@@ -1027,6 +1027,7 @@ void Building::outputMetadata() {
 		metadata["bg_color"][1] = fi.second.bg_color.g * 255;
 		metadata["bg_color"][2] = fi.second.bg_color.r * 255;
 		if (fi.second.valid) {
+			metadata["good_conf"] = fi.second.good_conf;
 			metadata["grammar"] = fi.second.grammar;
 			metadata["chip_size"][0] = fi.second.chip_size.x;
 			metadata["chip_size"][1] = fi.second.chip_size.y;

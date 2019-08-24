@@ -95,7 +95,7 @@ int reject(cv::Mat src_img, FacadeInfo& fi, ModelInfo& mi, bool bDebug) {
 	if (best_class == 1|| best_score < 0.96) // bad facades
 		return 0;
 	else {
-		fi.good_conf = best_score;
+		fi.good_conf = -log(confidences_tensor.slice(1, 1, 2).item<float>());
 		int type = 0;
 		if (facadeSize[0] < targetSize[0] && facadeSize[1] < targetSize[1]) {
 			type = 1;
