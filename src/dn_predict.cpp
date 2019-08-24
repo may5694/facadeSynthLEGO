@@ -675,14 +675,31 @@ int choose_best_chip(std::vector<ChipInfo> chips, ModelInfo& mi, bool bDebug) {
 	else {
 		std::vector<double> confidence_values;
 		confidence_values.resize(chips.size());
+
 		for (int i = 0; i < chips.size(); i++) {
-			confidence_values[i] = compute_chip_info(chips[i], mi, bDebug)[0];
-			if (bDebug) {
-				std::cout << "chip " << i << " score is " << confidence_values[i] << std::endl;
-			}
+			cv::Mat src_img = chips[i].src_image.clone();
+			if (src_img.channels() == 4) // ensure there're 3 channels
+				cv::cvtColor(src_img, src_img, CV_BGRA2BGR);
+			// prepare inputs
+			cv::Mat scale_img;
+			cv::resize(src_img, scale_img, cv::Size(224, 224));
+			cv::Mat dnn_img_rgb;
+			cv::cvtColor(scale_img, dnn_img_rgb, CV_BGR2RGB);
+			cv::Mat img_float;
+			dnn_img_rgb.convertTo(img_float, CV_32F, 1.0 / 255);
+			auto img_tensor = torch::from_blob(img_float.data, { 1, 224, 224, 3 }).to(torch::kCUDA);
+			img_tensor = img_tensor.permute({ 0, 3, 1, 2 });
+			img_tensor[0][0] = img_tensor[0][0].sub(0.485).div(0.229);
+			img_tensor[0][1] = img_tensor[0][1].sub(0.456).div(0.224);
+			img_tensor[0][2] = img_tensor[0][2].sub(0.406).div(0.225);
+			std::vector<torch::jit::IValue> inputs;
+			inputs.push_back(img_tensor);
+			torch::Tensor out_tensor = mi.reject_classifier_module->forward(inputs).toTensor();
+			torch::Tensor confidences_tensor = torch::softmax(out_tensor, 1);
+			confidence_values[i] = log(confidences_tensor.slice(1, 1, 2).item<float>());
 		}
-		// find the best chip id
-		best_chip_id = std::max_element(confidence_values.begin(), confidence_values.end()) - confidence_values.begin();
+		best_chip_id = std::min_element(confidence_values.begin(), confidence_values.end()) - confidence_values.begin();
+
 		if (bDebug) {
 			std::cout << "best_chip_id is " << best_chip_id << std::endl;
 		}
