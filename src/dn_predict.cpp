@@ -92,7 +92,7 @@ int reject(cv::Mat src_img, FacadeInfo& fi, ModelInfo& mi, bool bDebug) {
 		std::cout << confidences_tensor.slice(1, 0, 2) << std::endl;
 		std::cout << "Reject class is " << best_class << std::endl;
 	}
-	if (best_class == 1|| best_score < 0.96) // bad facades
+	if (best_class == 1|| best_score < 0.9) // bad facades
 		return 0;
 	else {
 		fi.good_conf = -log(confidences_tensor.slice(1, 1, 2).item<float>());
@@ -173,7 +173,11 @@ bool chipping(FacadeInfo& fi, ModelInfo& mi, ChipInfo &chip, bool bMultipleChips
 	// adjust the best chip
 	cv::Mat croppedImage = cropped_chips[best_chip_id].src_image.clone();
 	cv::Mat chip_seg;
-	pre_process(chip_seg, croppedImage, mi, bDebug);
+//	pre_process(chip_seg, croppedImage, mi, bDebug);
+	apply_segmentation_model(croppedImage, chip_seg, mi, bDebug);
+	std::vector<int> boundaries = adjust_chip(chip_seg.clone());
+	chip_seg = chip_seg(cv::Rect(boundaries[2], boundaries[0], boundaries[3] - boundaries[2] + 1, boundaries[1] - boundaries[0] + 1));
+	croppedImage = croppedImage(cv::Rect(boundaries[2], boundaries[0], boundaries[3] - boundaries[2] + 1, boundaries[1] - boundaries[0] + 1));
 
 	// add real chip size
 	int chip_width = croppedImage.size().width;
@@ -1226,7 +1230,7 @@ cv::Mat deSkewImg(cv::Mat src_img) {
 		}
 	}
 	drawing = drawing(cv::Rect(padding_size, padding_size, src_img.size().width, src_img.size().height));
-	cv::Mat aligned_img = cleanAlignedImage(drawing, 0.10);
+	cv::Mat aligned_img = cleanAlignedImage(drawing, 0.05);
 	return aligned_img;
 }
 
