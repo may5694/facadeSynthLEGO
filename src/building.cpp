@@ -1017,9 +1017,14 @@ void Building::outputMetadata() {
 		metadata["crop"][1] = fi.second.inscRect_px.y;
 		metadata["crop"][2] = fi.second.inscRect_px.width;
 		metadata["crop"][3] = fi.second.inscRect_px.height;
+		metadata["atlas_BB"][0] = fi.second.atlasBB_px.x;
+		metadata["atlas_BB"][1] = fi.second.atlasBB_px.y;
+		metadata["atlas_BB"][2] = fi.second.atlasBB_px.width;
+		metadata["atlas_BB"][3] = fi.second.atlasBB_px.height;
 		metadata["size"][0] = fi.second.inscSize_utm.x;
 		metadata["size"][1] = fi.second.inscSize_utm.y;
 		metadata["ground"] = fi.second.inscGround;
+		metadata["trueGround"] = fi.second.ground;
 		metadata["score"] = fi.second.score;
 		metadata["imagename"] = (debugDir / "chip" / (ss.str() + ".png")).string();
 		metadata["valid"] = fi.second.valid;
@@ -1214,7 +1219,7 @@ void Building::readSurfaces(fs::path surfPath) {
 			invalids.insert(fi.first);
 
 		fa.inscGround = (fa.ground &&
-			(fa.inscRect_px.y + fa.inscRect_px.height == fa.atlasBB_px.height));
+			abs(fa.inscRect_px.y + fa.inscRect_px.height - fa.atlasBB_px.height) < 2);
 
 		// Get orientation matrix
 		fa.rectXform = glm::mat4(1.0);
