@@ -409,6 +409,10 @@ void Building::synthFacades() {
 					foundSection = true;
 			}
 
+			// Optionally disable grouping
+			if (!mi.groupFacades)
+				foundSection = false;
+
 			// Add this facade and its grammar and heights to the group
 			if (foundSection) {
 				fg.facades.push_back(fi.first);
@@ -1480,4 +1484,5 @@ void readModeljson(std::string modeljson, ModelInfo& mi) {
 
 	// Building options
 	mi.recess = util::readNumber(docModel, "recess", 0.0);
+	mi.groupFacades = util::readBoolValue(docModel, "groupFacades", true);
 }
