@@ -105,8 +105,17 @@ void Building::load(fs::path metaPath, fs::path outputMetaPath, fs::path debugPa
 }
 
 void Building::clear() {
-	// Reset to default-constructed Building
-	*this = Building();
+	// Clear any existing data
+	posBuf.clear();
+	tcBuf.clear();
+	indexBuf.clear();
+	atlasImg = cv::Mat();
+	outputModelPath = fs::path();
+	outputTexPath = fs::path();
+	outputMtlPath = fs::path();
+	facadeInfo.clear();
+	debugOut = false;
+	debugDir = fs::path();
 }
 
 // Calculate a score for each facade
@@ -168,7 +177,7 @@ void Building::scoreFacades() {
 }
 
 // Estimate facade parameters for each facade
-void Building::estimParams(ModelInfo& mi) {
+void Building::estimParams() {
 	// Create debug directory
 	fs::path segDebugDir = debugDir / "seg";
 	if (debugOut) {
@@ -232,10 +241,10 @@ void Building::synthFacades() {
 	// Create OBJ and MTL files
 	ofstream objFile(objPath);
 	ofstream mtlFile(mtlPath);
-	int vcount = 0;			// Number of vertices written
-	int tcount = 0;			// Number of texcoords written
-	float recess = 0.0;		// Amount to recess windows and doors into the building
-	float g34_border = 2.0;	// Border above and below vertical windows
+	int vcount = 0;				// Number of vertices written
+	int tcount = 0;				// Number of texcoords written
+	float recess = mi.recess;	// Amount to recess windows and doors into the building
+	float g34_border = 2.0;		// Border above and below vertical windows
 
 	// Create synthetic atlas texture
 	cv::Mat synthAtlasImg = cv::Mat::zeros(atlasImg.size(), atlasImg.type());
@@ -1349,14 +1358,14 @@ void genFacadeModel(const string& model_metadata_path,
 	fs::path debugPath) {
 
     // Load the building data
-    Building b;
+    Building b(mi);
     b.load(fs::path(model_metadata_path), fs::path(output_model_metadata_path), debugPath);
 
     // Score all facades
     b.scoreFacades();
 
     // Estimate facade params
-    b.estimParams(mi);
+    b.estimParams();
 
     // Create synthetic facades
     b.synthFacades();
@@ -1468,4 +1477,7 @@ void readModeljson(std::string modeljson, ModelInfo& mi) {
 
 		}
 	}
+
+	// Building options
+	mi.recess = util::readNumber(docModel, "recess", 0.0);
 }

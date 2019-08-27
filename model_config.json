@@ -71,5 +71,6 @@
 	"segImageSize":[256, 256],
 	"targetChipSize":[30.0, 30.0],
 	"reject_model":"networks/gpu/reject_model_classifier.pt",
-	"seg_model":"networks/gpu/seg_model.pt"
+	"seg_model":"networks/gpu/seg_model.pt",
+	"recess":0.3
 }

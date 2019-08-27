@@ -20,19 +20,18 @@ void readModeljson(std::string modeljson, ModelInfo& mi);
 
 class Building {
 public:
-	Building(): debugOut(false) {}
+	Building(const ModelInfo& mi): mi(mi), debugOut(false) {}
 	void load(fs::path metaPath, fs::path outputMetaPath, fs::path debugPath = {});
 	void clear();
 
 	void scoreFacades();
-	void estimParams(ModelInfo& mi);
+	void estimParams();
 	void synthFacades();
 
 	// Debug output
 	void outputMetadata();
 
 private:
-
 	// Geometry buffers
 	std::vector<glm::vec3> posBuf;		// Positions
 	std::vector<glm::vec2> tcBuf;		// Texture coordinates
@@ -40,6 +39,9 @@ private:
 
 	// Texture atlas
 	cv::Mat atlasImg;					// Atlas texture image
+
+	// NN models and building options
+	const ModelInfo& mi;
 
 	// Metadata
 	fs::path outputModelPath;						// Output model name
@@ -112,7 +114,7 @@ struct Grammar {
 	std::vector<double> relativeDHeight;
 };
 
-// Holds information about NNs
+// Holds information about NNs and building options
 struct ModelInfo {
 	std::string facadesFolder;
 	std::string invalidfacadesFolder;
@@ -132,6 +134,7 @@ struct ModelInfo {
 	int number_grammars;
 	std::shared_ptr<torch::jit::script::Module> reject_classifier_module;
 	std::shared_ptr<torch::jit::script::Module> seg_module;
+	float recess;
 };
 
 #endif

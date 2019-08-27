@@ -6,7 +6,7 @@
 #include <dlib/rand.h>
 using namespace dlib;
 
-void dn_predict(FacadeInfo& fi, ModelInfo& mi, std::string dn_path) {
+void dn_predict(FacadeInfo& fi, const ModelInfo& mi, std::string dn_path) {
 	ChipInfo chip;
 	bool bvalid = chipping(fi, mi, chip, true, false);
 	if (bvalid) {
@@ -42,7 +42,7 @@ int reject(cv::Mat src_img, std::vector<double> facadeSize, std::vector<double> 
 	return type;
 }
 
-int reject(cv::Mat src_img, FacadeInfo& fi, ModelInfo& mi, bool bDebug) {
+int reject(cv::Mat src_img, FacadeInfo& fi, const ModelInfo& mi, bool bDebug) {
 	// size of chip
 	std::vector<double> facadeSize = { fi.inscSize_utm.x, fi.inscSize_utm.y };
 	// size of nn image size
@@ -116,7 +116,7 @@ int reject(cv::Mat src_img, FacadeInfo& fi, ModelInfo& mi, bool bDebug) {
 	}
 }
 
-bool chipping(FacadeInfo& fi, ModelInfo& mi, ChipInfo &chip, bool bMultipleChips, bool bDebug) {
+bool chipping(FacadeInfo& fi, const ModelInfo& mi, ChipInfo &chip, bool bMultipleChips, bool bDebug) {
 	// size of chip
 	std::vector<double> facadeSize = { fi.inscSize_utm.x, fi.inscSize_utm.y };
 	// roof 
@@ -254,7 +254,7 @@ bool chipping(FacadeInfo& fi, ModelInfo& mi, ChipInfo &chip, bool bMultipleChips
 	return true;
 }
 
-void pre_process(cv::Mat &chip_seg, cv::Mat& croppedImage, ModelInfo& mi, bool bDebug) {
+void pre_process(cv::Mat &chip_seg, cv::Mat& croppedImage, const ModelInfo& mi, bool bDebug) {
 	// --- step 1
 	apply_segmentation_model(croppedImage, chip_seg, mi, bDebug);
 	cv::Mat scale_img;
@@ -634,7 +634,7 @@ std::vector<ChipInfo> crop_chip_ground(cv::Mat src_facade, int type, std::vector
 	return cropped_chips;
 }
 
-std::vector<double> compute_chip_info(ChipInfo chip, ModelInfo& mi, bool bDebug) {
+std::vector<double> compute_chip_info(ChipInfo chip, const ModelInfo& mi, bool bDebug) {
 	std::vector<double> chip_info;
 	apply_segmentation_model(chip.src_image, chip.seg_image, mi, false);
 	//adjust boundaries
@@ -675,7 +675,7 @@ std::vector<double> compute_chip_info(ChipInfo chip, ModelInfo& mi, bool bDebug)
 	return chip_info;
 }
 
-int choose_best_chip(std::vector<ChipInfo> chips, ModelInfo& mi, bool bDebug) {
+int choose_best_chip(std::vector<ChipInfo> chips, const ModelInfo& mi, bool bDebug) {
 	int best_chip_id = 0;
 	if (chips.size() == 1)
 		best_chip_id = 0;
@@ -869,7 +869,7 @@ void find_spacing(cv::Mat src_img, std::vector<int> &separation_x, std::vector<i
 	return;
 }
 
-void apply_segmentation_model(cv::Mat &croppedImage, cv::Mat &chip_seg, ModelInfo& mi, bool bDebug) {
+void apply_segmentation_model(cv::Mat &croppedImage, cv::Mat &chip_seg, const ModelInfo& mi, bool bDebug) {
 	int run_times = 3;
 	cv::Mat src_img = croppedImage.clone();
 	// scale to seg size
@@ -946,7 +946,7 @@ void apply_segmentation_model(cv::Mat &croppedImage, cv::Mat &chip_seg, ModelInf
 	}
 }
 
-bool process_chip(ChipInfo &chip, ModelInfo& mi, bool bDebug) {
+bool process_chip(ChipInfo &chip, const ModelInfo& mi, bool bDebug) {
 	// default size for NN
 	int width = mi.defaultSize[0] - 2 * mi.paddingSize[0];
 	int height = mi.defaultSize[1] - 2 * mi.paddingSize[1];
@@ -1003,7 +1003,7 @@ bool process_chip(ChipInfo &chip, ModelInfo& mi, bool bDebug) {
 	return true;
 }
 
-void feedDnn(ChipInfo &chip, FacadeInfo& fi, ModelInfo& mi, bool bDebug) {
+void feedDnn(ChipInfo &chip, FacadeInfo& fi, const ModelInfo& mi, bool bDebug) {
 	int num_classes = mi.number_grammars;
 	// 
 	std::vector<int> separation_x;
@@ -1275,7 +1275,7 @@ cv::Mat cleanAlignedImage(cv::Mat src, float threshold) {
 	return result;
 }
 
-std::vector<double> grammar1(ModelInfo& mi, std::vector<double> paras, bool bDebug) {
+std::vector<double> grammar1(const ModelInfo& mi, std::vector<double> paras, bool bDebug) {
 	// range of Rows
 	std::pair<int, int> imageRows(mi.grammars[0].rangeOfRows[0], mi.grammars[0].rangeOfRows[1]);
 	// range of Cols
@@ -1308,7 +1308,7 @@ std::vector<double> grammar1(ModelInfo& mi, std::vector<double> paras, bool bDeb
 	return results;
 }
 
-std::vector<double> grammar2(ModelInfo& mi, std::vector<double> paras, bool bDebug) {
+std::vector<double> grammar2(const ModelInfo& mi, std::vector<double> paras, bool bDebug) {
 	// range of Rows
 	std::pair<int, int> imageRows(mi.grammars[1].rangeOfRows[0], mi.grammars[1].rangeOfRows[1]);
 	// range of Cols
@@ -1349,7 +1349,7 @@ std::vector<double> grammar2(ModelInfo& mi, std::vector<double> paras, bool bDeb
 	return results;
 }
 
-std::vector<double> grammar3(ModelInfo& mi, std::vector<double> paras, bool bDebug) {
+std::vector<double> grammar3(const ModelInfo& mi, std::vector<double> paras, bool bDebug) {
 	// range of Cols
 	std::pair<int, int> imageCols(mi.grammars[2].rangeOfCols[0], mi.grammars[2].rangeOfCols[1]);
 	// relativeWidth
@@ -1370,7 +1370,7 @@ std::vector<double> grammar3(ModelInfo& mi, std::vector<double> paras, bool bDeb
 	return results;
 }
 
-std::vector<double> grammar4(ModelInfo& mi, std::vector<double> paras, bool bDebug) {
+std::vector<double> grammar4(const ModelInfo& mi, std::vector<double> paras, bool bDebug) {
 	// range of Rows
 	std::pair<int, int> imageCols(mi.grammars[3].rangeOfCols[0], mi.grammars[3].rangeOfCols[1]);
 	// range of Doors
@@ -1405,7 +1405,7 @@ std::vector<double> grammar4(ModelInfo& mi, std::vector<double> paras, bool bDeb
 	return results;
 }
 
-std::vector<double> grammar5(ModelInfo& mi, std::vector<double> paras, bool bDebug) {
+std::vector<double> grammar5(const ModelInfo& mi, std::vector<double> paras, bool bDebug) {
 	// range of Rows
 	std::pair<int, int> imageRows(mi.grammars[4].rangeOfRows[0], mi.grammars[4].rangeOfRows[1]);
 	// relativeHeight
@@ -1426,7 +1426,7 @@ std::vector<double> grammar5(ModelInfo& mi, std::vector<double> paras, bool bDeb
 	return results;
 }
 
-std::vector<double> grammar6(ModelInfo& mi, std::vector<double> paras, bool bDebug) {
+std::vector<double> grammar6(const ModelInfo& mi, std::vector<double> paras, bool bDebug) {
 	// range of Rows
 	std::pair<int, int> imageRows(mi.grammars[5].rangeOfRows[0], mi.grammars[5].rangeOfRows[1]);
 	// range of Doors
