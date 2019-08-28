@@ -690,9 +690,9 @@ void Building::synthFacades() {
 				<< fixed << setprecision(8) << fp.win_color.r << " "
 				<< fixed << setprecision(8) << fp.win_color.g << " "
 				<< fixed << setprecision(8) << fp.win_color.b << endl;
-			mtlFile << "Ks 0.00000000 0.00000000 0.00000000" << endl;
+			mtlFile << "Ks 1.00000000 1.00000000 1.00000000" << endl;
 			mtlFile << "illum 2" << endl;
-			mtlFile << "Ns 0.00000000" << endl;
+			mtlFile << "Ns 200.00000000" << endl;
 
 			objFile << "usemtl " << fiStr << "_bg" << endl;
 
