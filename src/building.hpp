@@ -57,6 +57,7 @@ private:
 	void readModel(fs::path modelPath);
 	void readSurfaces(fs::path surfPath);
 	static cv::Rect findLargestRectangle(cv::Mat img);
+	static void copyObj(fs::path srcObj, fs::path dstObj);
 };
 
 // Holds information about a facade

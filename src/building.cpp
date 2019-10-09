@@ -88,6 +88,10 @@ void Building::load(fs::path metaPath, fs::path outputMetaPath, fs::path debugPa
 		if (fs::exists(chipDir))
 			fs::remove_all(chipDir);
 		fs::create_directory(chipDir);
+		// Create model directory
+		fs::path modelDir = debugDir / "model";
+		if (!fs::exists(modelDir))
+			fs::create_directory(modelDir);
 
 		for (auto& fi : facadeInfo) {
 			// Save facade image
@@ -101,6 +105,9 @@ void Building::load(fs::path metaPath, fs::path outputMetaPath, fs::path debugPa
 			fs::path chipPath = chipDir / (ss.str() + ".png");
 			cv::imwrite(chipPath.string(), chipImg);
 		}
+
+		// Copy the input model to the model directory
+		copyObj(modelPath, modelDir / (debugDir.filename().string() + "_projtex.obj"));
 	}
 }
 
@@ -1009,6 +1016,21 @@ void Building::synthFacades() {
 
 	// Save synthetic atlas
 	cv::imwrite(texPath.string(), synthAtlasImg);
+	objFile.close();
+	mtlFile.close();
+
+	// Copy synth model to model output folder
+	if (debugOut) {
+		// Create model directory
+		fs::path modelDir = debugDir / "model";
+		if (!fs::exists(modelDir))
+			fs::create_directory(modelDir);
+
+		// Copy the model
+		copyObj(objPath, modelDir / (debugDir.filename().string() + "_synth__" +
+			(mi.groupFacades ? "group" : "nogroup") + "_" +
+			(mi.bOpt ? "opt" : "noopt") + ".obj"));
+	}
 }
 
 void Building::outputMetadata() {
@@ -1335,6 +1357,79 @@ cv::Rect Building::findLargestRectangle(cv::Mat img) {
 	}
 
 	return maxRect;
+}
+
+// Copy an obj file with its associated mtl and texture files, making sure to rename
+// all files and update the paths in each. This assumes there is at most one .mtl file
+// for any given .obj file, and at most one texture file for any given .mtl file.
+void Building::copyObj(fs::path srcObjPath, fs::path dstObjPath) {
+	bool doMtl = false;
+	fs::path srcMtlPath, dstMtlPath;
+
+	// Open src and dst files
+	ifstream srcObj(srcObjPath);
+	ofstream dstObj(dstObjPath);
+	if (!srcObj) throw runtime_error("copyObj(): cannot open " + srcObjPath.string());
+
+	// Read each line in src file
+	string srcLine;
+	while (getline(srcObj, srcLine)) {
+		// Get first word in line
+		stringstream ss(srcLine);
+		string firstWord;
+		ss >> firstWord;
+
+		// Detect material library
+		if (firstWord == "mtllib") {
+			string mtlName;
+			ss >> mtlName;		// Assumes no spaces in path!!!
+
+			// Get src and dst paths to mtl
+			doMtl = true;
+			srcMtlPath = srcObjPath.parent_path() / mtlName;
+			dstMtlPath = dstObjPath.parent_path() / (dstObjPath.stem().string() + ".mtl");
+
+			// Write new mtllib name to copied object
+			dstObj << "mtllib " << dstMtlPath.filename().string() << endl;
+
+		// Copy every other line verbatim
+		} else
+			dstObj << srcLine << endl;
+	}
+
+
+	// Do the same for any .mtl file we found
+	if (doMtl) {
+		ifstream srcMtl(srcMtlPath);
+		ofstream dstMtl(dstMtlPath);
+		if (!srcMtl) throw runtime_error("copyObj(): cannot open " + srcMtlPath.string());
+
+		// Read each line in src file
+		while (getline(srcMtl, srcLine)) {
+			// Get first word in line
+			stringstream ss(srcLine);
+			string firstWord;
+			ss >> firstWord;
+
+			// Detect texture map
+			if (firstWord == "map_Kd") {
+				string texName;
+				ss >> texName;		// Assumes no spaces in path!!!
+
+				// Copy the texture
+				fs::path srcTexPath = srcMtlPath.parent_path() / texName;
+				fs::path dstTexPath = dstMtlPath.parent_path() /
+					(dstMtlPath.stem().string() + srcTexPath.extension().string());
+				fs::copy_file(srcTexPath, dstTexPath, fs::copy_options::overwrite_existing);
+
+				// Write new texture name to copied mtl
+				dstMtl << "map_Kd " << dstTexPath.filename().string() << endl;
+
+			// Copy every other line verbatim
+			} else
+				dstMtl << srcLine << endl;
+		}
+	}
 }
 
 // Default values for FacadeInfo members
