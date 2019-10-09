@@ -1037,6 +1037,12 @@ void Building::synthFacades() {
 void Building::segmentFacades() {
 	if (!debugOut) return;
 
+	// Create segs directory
+	fs::path segDir = debugDir / "seg";
+	if (fs::exists(segDir))
+		fs::remove_all(segDir);
+	fs::create_directory(segDir);
+
 	// Copy the atlas
 	cv::Mat segAtlasImg = atlasImg.clone();
 
@@ -1062,6 +1068,12 @@ void Building::segmentFacades() {
 			// Get next largest rectangle
 			lrect = findLargestRectangle(remFacadeImg);
 		}
+
+		// Save the segmented facade
+		stringstream ss;
+		ss << setw(4) << setfill('0') << fi.first;
+		fs::path segPath = segDir / (ss.str() + ".png");
+		cv::imwrite(segPath.string(), segAtlasImg(fp.atlasBB_px));
 	}
 
 	// Copy textured obj to segmented obj
