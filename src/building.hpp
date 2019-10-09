@@ -44,7 +44,7 @@ private:
 	const ModelInfo& mi;
 
 	// Metadata
-	fs::path outputModelPath;						// Output model name
+	fs::path outputModelPath;					// Output model name
 	fs::path outputTexPath;						// Output texture name
 	fs::path outputMtlPath;						// Output mtl name
 	glm::vec3 minBB_utm, maxBB_utm;			// Bounding box min/max coords (UTM)

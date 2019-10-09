@@ -178,12 +178,12 @@ void Building::scoreFacades() {
 
 // Estimate facade parameters for each facade
 void Building::estimParams() {
-	// Create debug directory
-	fs::path segDebugDir = debugDir / "seg";
+	// Create synth output directory
+	fs::path dnDebugDir = debugDir / "dn_debug";
 	if (debugOut) {
-		if (fs::exists(segDebugDir))
-			fs::remove_all(segDebugDir);
-		fs::create_directory(segDebugDir);
+		if (fs::exists(dnDebugDir))
+			fs::remove_all(dnDebugDir);
+		fs::create_directory(dnDebugDir);
 	}
 
 	// Loop over all facades
@@ -198,7 +198,7 @@ void Building::estimParams() {
 			stringstream ss;
 			ss << setw(4) << setfill('0') << fi.first;
 			string prefix;
-			if (debugOut) prefix = (segDebugDir / ss.str()).string();
+			if (debugOut) prefix = (dnDebugDir / ss.str()).string();
 
 			// Predict facade parameters
 			dn_predict(fi.second, mi, prefix);
@@ -213,10 +213,23 @@ void Building::synthFacades() {
 	// Create debug output directory
 	fs::path synthDir;
 	if (debugOut) {
-		synthDir = debugDir / "synth";
+		synthDir = debugDir / "synth" /
+			(string(mi.groupFacades ? "group" : "nogroup") + "_"
+			+ string(mi.bOpt ? "opt" : "noopt"));
 		if (fs::exists(synthDir))
 			fs::remove_all(synthDir);
-		fs::create_directory(synthDir);
+		fs::create_directories(synthDir);
+	}
+
+	// Create groups output directory
+	fs::path groupsDir;
+	if (debugOut) {
+		groupsDir = debugDir / "groups" /
+			(string(mi.groupFacades ? "group" : "nogroup") + "_"
+			+ string(mi.bOpt ? "opt" : "noopt"));
+		if (fs::exists(groupsDir))
+			fs::remove_all(groupsDir);
+		fs::create_directories(groupsDir);
 	}
 
 	// Get paths to output files
@@ -306,16 +319,6 @@ void Building::synthFacades() {
 	};
 	vector<FacadeGroup> facadeGroups;
 	map<int, int> whichGroup;		// Maps facade ID to group ID
-
-	// Create groups output directory
-	fs::path groupsDir;
-	if (debugOut) {
-		groupsDir = debugDir / "groups";
-		if (fs::exists(groupsDir))
-			fs::remove_all(groupsDir);
-		fs::create_directory(groupsDir);
-	}
-
 
 	for (auto& fi : facadeInfo) {
 		auto& fp = fi.second;
@@ -1013,10 +1016,12 @@ void Building::outputMetadata() {
 	if (!debugOut) return;
 
 	// Create debug metadata directory
-	fs::path metaDir = debugDir / "metadata";
+	fs::path metaDir = debugDir / "metadata" /
+		(string(mi.groupFacades ? "group" : "nogroup") + "_"
+		+ string(mi.bOpt ? "opt" : "noopt"));
 	if (fs::exists(metaDir))
 		fs::remove_all(metaDir);
-	fs::create_directory(metaDir);
+	fs::create_directories(metaDir);
 
 	// Loop over all facades
 	for (auto& fi : facadeInfo) {
