@@ -27,6 +27,7 @@ struct ChipInfo {
 };
 
 void dn_predict(FacadeInfo& fi, const ModelInfo& mi, std::string debugPath);
+cv::Mat pix2pix_seg(cv::Mat& src_img, ModelInfo& mi);
 
 /**** helper functions *****/
 int reject(cv::Mat src_img, std::vector<double> facadeSize, std::vector<double> targetSize, double score, bool bDebug);
@@ -53,5 +54,11 @@ std::vector<double> grammar3(const ModelInfo& mi, std::vector<double> paras, boo
 std::vector<double> grammar4(const ModelInfo& mi, std::vector<double> paras, bool bDebug);
 std::vector<double> grammar5(const ModelInfo& mi, std::vector<double> paras, bool bDebug);
 std::vector<double> grammar6(const ModelInfo& mi, std::vector<double> paras, bool bDebug);
+
+/**** opt ****/
+void opt_without_doors(cv::Mat& seg_rbg, std::vector<double>& predictions_opt, std::vector<double> predictions_init);
+void opt_with_doors(cv::Mat& seg_rbg, std::vector<double>& predictions_opt, std::vector<double> predictions_init);
+cv::Mat synthesis_opt(std::vector<double> predictions, cv::Size src_size, cv::Scalar win_color, cv::Scalar bg_color, bool bDebug);
+std::vector<double> eval_accuracy(const cv::Mat& seg_img, const cv::Mat& gt_img);
 
 #endif

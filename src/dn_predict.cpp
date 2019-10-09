@@ -22,6 +22,151 @@ void dn_predict(FacadeInfo& fi, const ModelInfo& mi, std::string dn_path) {
 	}
 }
 
+cv::Mat pix2pix_seg(cv::Mat& src_img, ModelInfo& mi) {
+	cv::Scalar bg_color(255, 255, 255); // white back ground
+	cv::Scalar window_color(0, 0, 0); // black for windows
+	if (src_img.channels() == 4) // ensure there're 3 channels
+		cv::cvtColor(src_img, src_img, CV_BGRA2BGR);
+	int run_times = 3;
+	// scale to seg size
+	cv::Mat scale_img;
+	cv::resize(src_img, scale_img, cv::Size(mi.segImageSize[0], mi.segImageSize[1]));
+	cv::Mat dnn_img_rgb;
+	cv::cvtColor(scale_img, dnn_img_rgb, CV_BGR2RGB);
+	cv::Mat img_float;
+	dnn_img_rgb.convertTo(img_float, CV_32F, 1.0 / 255);
+	int channels = 3;
+//	if (mi.seg_module_type == 2)
+//		channels = 1;
+	auto img_tensor = torch::from_blob(img_float.data, { 1, (int)mi.segImageSize[0], (int)mi.segImageSize[1], channels }).to(torch::kCUDA);
+	img_tensor = img_tensor.permute({ 0, 3, 1, 2 });
+	img_tensor[0][0] = img_tensor[0][0].sub(0.5).div(0.5);
+//	if (mi.seg_module_type != 2) {
+		img_tensor[0][1] = img_tensor[0][1].sub(0.5).div(0.5);
+		img_tensor[0][2] = img_tensor[0][2].sub(0.5).div(0.5);
+//	}
+
+	std::vector<torch::jit::IValue> inputs;
+	inputs.push_back(img_tensor);
+	std::vector<std::vector<int>> color_mark;
+	color_mark.resize((int)mi.segImageSize[1]);
+	for (int i = 0; i < color_mark.size(); i++) {
+		color_mark[i].resize((int)mi.segImageSize[0]);
+		for (int j = 0; j < color_mark[i].size(); j++) {
+			color_mark[i][j] = 0;
+		}
+	}
+	// run three times
+	for (int i = 0; i < run_times; i++) {
+		torch::Tensor out_tensor;
+		out_tensor = mi.seg_module->forward(inputs).toTensor();
+		out_tensor = out_tensor.squeeze().detach().permute({ 1,2,0 });
+		out_tensor = out_tensor.add(1).mul(0.5 * 255).clamp(0, 255).to(torch::kU8);
+		//out_tensor = out_tensor.mul(255).clamp(0, 255).to(torch::kU8);
+		out_tensor = out_tensor.to(torch::kCPU);
+		cv::Mat resultImg((int)mi.segImageSize[0], (int)mi.segImageSize[1], CV_8UC3);
+		std::memcpy((void*)resultImg.data, out_tensor.data_ptr(), sizeof(torch::kU8)*out_tensor.numel());
+		// gray img
+		// correct the color
+		for (int h = 0; h < resultImg.size().height; h++) {
+			for (int w = 0; w < resultImg.size().width; w++) {
+				if (resultImg.at<cv::Vec3b>(h, w)[0] > 160)
+					color_mark[h][w] += 0;
+				else
+					color_mark[h][w] += 1;
+			}
+		}
+	}
+	cv::Mat gray_img((int)mi.segImageSize[0], (int)mi.segImageSize[1], CV_8UC1);
+	int num_majority = ceil(0.5 * run_times);
+	for (int i = 0; i < color_mark.size(); i++) {
+		for (int j = 0; j < color_mark[i].size(); j++) {
+			if (color_mark[i][j] < num_majority)
+				gray_img.at<uchar>(i, j) = (uchar)0;
+			else
+				gray_img.at<uchar>(i, j) = (uchar)255;
+		}
+	}
+	// scale to grammar size
+	cv::Mat chip_seg;
+	cv::resize(gray_img, chip_seg, src_img.size());
+	// correct the color
+	for (int i = 0; i < chip_seg.size().height; i++) {
+		for (int j = 0; j < chip_seg.size().width; j++) {
+			//noise
+			if ((int)chip_seg.at<uchar>(i, j) < 100) {
+				chip_seg.at<uchar>(i, j) = (uchar)0;
+			}
+			else
+				chip_seg.at<uchar>(i, j) = (uchar)255;
+		}
+	}
+	// compute color
+	cv::Scalar bg_avg_color(0, 0, 0);
+	cv::Scalar win_avg_color(0, 0, 0);
+	{
+		int bg_count = 0;
+		int win_count = 0;
+		for (int i = 0; i < chip_seg.size().height; i++) {
+			for (int j = 0; j < chip_seg.size().width; j++) {
+				if ((int)chip_seg.at<uchar>(i, j) == 0) {
+					win_avg_color.val[0] += src_img.at<cv::Vec3b>(i, j)[0];
+					win_avg_color.val[1] += src_img.at<cv::Vec3b>(i, j)[1];
+					win_avg_color.val[2] += src_img.at<cv::Vec3b>(i, j)[2];
+					win_count++;
+				}
+				else {
+					bg_avg_color.val[0] += src_img.at<cv::Vec3b>(i, j)[0];
+					bg_avg_color.val[1] += src_img.at<cv::Vec3b>(i, j)[1];
+					bg_avg_color.val[2] += src_img.at<cv::Vec3b>(i, j)[2];
+					bg_count++;
+				}
+			}
+		}
+		if (win_count > 0) {
+			win_avg_color.val[0] = win_avg_color.val[0] / win_count;
+			win_avg_color.val[1] = win_avg_color.val[1] / win_count;
+			win_avg_color.val[2] = win_avg_color.val[2] / win_count;
+		}
+		if (bg_count > 0) {
+			bg_avg_color.val[0] = bg_avg_color.val[0] / bg_count;
+			bg_avg_color.val[1] = bg_avg_color.val[1] / bg_count;
+			bg_avg_color.val[2] = bg_avg_color.val[2] / bg_count;
+		}
+	}
+
+
+	// add padding
+	int padding_size = mi.paddingSize[0];
+	int borderType = cv::BORDER_CONSTANT;
+	cv::Mat aligned_img_padding;
+	cv::copyMakeBorder(chip_seg, aligned_img_padding, padding_size, padding_size, padding_size, padding_size, borderType, bg_color);
+	// bbox and color
+	std::vector<std::vector<cv::Point> > contours;
+	std::vector<cv::Vec4i> hierarchy;
+	cv::findContours(aligned_img_padding, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_NONE, cv::Point(0, 0));
+
+	std::vector<float> area_contours(contours.size());
+	std::vector<cv::Rect> boundRect(contours.size());
+	std::vector<cv::Scalar> colors(contours.size());
+	for (int i = 0; i < contours.size(); i++)
+	{
+		boundRect[i] = cv::boundingRect(cv::Mat(contours[i]));
+		area_contours[i] = cv::contourArea(contours[i]);
+	}
+	cv::Mat dnn_img = cv::Mat(aligned_img_padding.size(), CV_8UC3, bg_avg_color);
+	for (int i = 0; i < contours.size(); i++)
+	{
+		if (hierarchy[i][3] != 0) continue;
+		if (area_contours[i] < 15)
+			continue;
+		cv::rectangle(dnn_img, cv::Point(boundRect[i].tl().x + 1, boundRect[i].tl().y + 1), cv::Point(boundRect[i].br().x - 1, boundRect[i].br().y - 1), win_avg_color, -1);
+	}
+	dnn_img = dnn_img(cv::Rect(padding_size, padding_size, src_img.size().width, src_img.size().height));
+	return dnn_img;
+}
+
+
 int reject(cv::Mat src_img, std::vector<double> facadeSize, std::vector<double> targetSize, double score, bool bDebug) {
 	int type = 0;
 	if (facadeSize[0] < targetSize[0] && facadeSize[0] > 0.5 * targetSize[0] && facadeSize[1] < targetSize[1] && facadeSize[1] > 0.5 * targetSize[1] && score > 0.94) {
@@ -1106,6 +1251,38 @@ void feedDnn(ChipInfo &chip, FacadeInfo& fi, const ModelInfo& mi, bool bDebug) {
 	}
 	if (abs(predictions[1] - spacing_c) <= 1 && predictions[1] > 1)
 		predictions[1] = spacing_c;
+	// opt
+	double score_opt = 0;
+	bool bOpt = mi.bOpt;
+	// generate red + blue seg img
+	cv::Mat seg_src = chip.seg_image.clone();
+	cv::Mat seg_rgb = cv::Mat(seg_src.size(), CV_8UC3, cv::Scalar(255, 255, 255));
+	for (int i = 0; i < seg_src.size().height; i++) {
+		for (int j = 0; j < seg_src.size().width; j++) {
+			//noise
+			if ((int)seg_src.at<uchar>(i, j) == 0) {
+				seg_rgb.at<cv::Vec3b>(i, j)[0] = 0;
+				seg_rgb.at<cv::Vec3b>(i, j)[1] = 0;
+				seg_rgb.at<cv::Vec3b>(i, j)[2] = 255;
+			}
+			else {
+				seg_rgb.at<cv::Vec3b>(i, j)[0] = 255;
+				seg_rgb.at<cv::Vec3b>(i, j)[1] = 0;
+				seg_rgb.at<cv::Vec3b>(i, j)[2] = 0;
+			}
+		}
+	}
+	std::vector<double> predictions_opt;
+	if (predictions.size() == 5 && bOpt) {
+		opt_without_doors(seg_rgb, predictions_opt, predictions);
+	}
+	if (predictions.size() == 8 && bOpt) {
+		opt_with_doors(seg_rgb, predictions_opt, predictions);
+	}
+	if (bOpt) {
+		for (int i = 0; i < predictions.size(); i++)
+			predictions[i] = predictions_opt[i];
+	}
 	// write back to fi
 	for (int i = 0; i < num_classes; i++)
 		fi.conf[i] = confidence_values[i];
@@ -1459,4 +1636,259 @@ std::vector<double> grammar6(const ModelInfo& mi, std::vector<double> paras, boo
 	results.push_back(relative_door_width);
 	results.push_back(relative_door_height);
 	return results;
+}
+
+void opt_without_doors(cv::Mat& seg_rgb, std::vector<double>& predictions_opt, std::vector<double> predictions_init) {
+	double score_opt = 0;
+	predictions_opt.resize(9);
+	double step_size = 0.02;
+	double step_size_m = 0.04;
+	for (int v1 = -2; v1 <= 2; v1++) {
+		for (int v2 = -2; v2 <= 2; v2++) {
+			for (int v3 = -10; v3 <= 10; v3++) {
+				for (int v4 = -10; v4 <= 10; v4++) {
+					for (int m_t = 0; m_t <= 5; m_t++) {
+						for (int m_b = 0; m_b <= 5; m_b++) {
+							for (int m_l = 0; m_l <= 5; m_l++) {
+								for (int m_r = 0; m_r <= 5; m_r++) {
+									std::vector<double> predictions_tmp;
+									predictions_tmp.push_back(v1 + predictions_init[0]);
+									predictions_tmp.push_back(v2 + predictions_init[1]);
+									predictions_tmp.push_back(predictions_init[2]);
+									if (v3 * step_size + predictions_init[3] < 0 || v3 * step_size + predictions_init[3] > 0.95)
+										continue;
+									predictions_tmp.push_back(v3 * step_size + predictions_init[3]);
+									if (v4 * step_size + predictions_init[4] < 0 || v4 * step_size + predictions_init[4] > 0.95)
+										continue;
+									predictions_tmp.push_back(v4 * step_size + predictions_init[4]);
+									predictions_tmp.push_back(m_t * step_size_m);
+									predictions_tmp.push_back(m_b * step_size_m);
+									predictions_tmp.push_back(m_l * step_size_m);
+									predictions_tmp.push_back(m_r * step_size_m);
+									cv::Scalar win_avg_color(0, 0, 255, 0);
+									cv::Scalar bg_avg_color(255, 0, 0, 0);
+									cv::Mat syn_img = synthesis_opt(predictions_tmp, seg_rgb.size(), win_avg_color, bg_avg_color, false);
+									std::vector<double> evaluations = eval_accuracy(syn_img, seg_rgb);
+									double score_tmp = 0.5 * evaluations[1] + 0.5 *evaluations[2];
+									//std::cout << "score_tmp is " << score_tmp << std::endl;
+									if (score_tmp > score_opt) {
+										score_opt = score_tmp;
+										for (int index = 0; index < predictions_tmp.size(); index++) {
+											predictions_opt[index] = predictions_tmp[index];
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+void opt_with_doors(cv::Mat& seg_rgb, std::vector<double>& predictions_opt, std::vector<double> predictions_init) {
+	double score_opt = 0;
+	predictions_opt.resize(13);
+	double step_size = 0.05;
+	double step_size_m = 0.05;
+	double step_size_m_d = 0.05;
+	for (int v1 = -1; v1 <= 1; v1++) {
+		for (int v2 = -1; v2 <= 1; v2++) {
+			for (int v3 = -1; v3 <= 1; v3++) {
+				for (int v4 = -3; v4 <= 3; v4++) {
+					for (int v5 = -3; v5 <= 3; v5++) {
+						for (int v6 = -3; v6 <= 3; v6++) {
+							for (int v7 = -2; v7 <= 2; v7++) {
+								for (int m_t = 0; m_t <= 2; m_t++) {
+									for (int m_b = 0; m_b <= 2; m_b++) {
+										for (int m_l = 0; m_l <= 2; m_l++) {
+											for (int m_r = 0; m_r <= 2; m_r++) {
+												for (int m_d = 1; m_d <= 3; m_d++) {
+													std::vector<double> predictions_tmp;
+													predictions_tmp.push_back(v1 + predictions_init[0]);
+													predictions_tmp.push_back(v2 + predictions_init[1]);
+													predictions_tmp.push_back(predictions_init[2]);
+													predictions_tmp.push_back(v3 + predictions_init[3]);
+													if (v4 * step_size + predictions_init[4] < 0 || v4 * step_size + predictions_init[4] > 0.95)
+														continue;
+													predictions_tmp.push_back(v4 * step_size + predictions_init[4]);
+													if (v5 * step_size + predictions_init[5] < 0 || v5 * step_size + predictions_init[5] > 0.95)
+														continue;
+													predictions_tmp.push_back(v5 * step_size + predictions_init[5]);
+													if (v6 * step_size + predictions_init[6] < 0 || v6 * step_size + predictions_init[6] > 0.95)
+														continue;
+													predictions_tmp.push_back(v6 * step_size + predictions_init[6]);
+													predictions_tmp.push_back(v7 * step_size + predictions_init[7]);
+
+													predictions_tmp.push_back(m_t * step_size_m);
+													predictions_tmp.push_back(m_b * step_size_m);
+													predictions_tmp.push_back(m_l * step_size_m);
+													predictions_tmp.push_back(m_r * step_size_m);
+													predictions_tmp.push_back(m_d * step_size_m_d);
+													//std::cout << "predictions_tmp size is " << predictions_tmp.size() << std::endl;
+													cv::Scalar win_avg_color(0, 0, 255, 0);
+													cv::Scalar bg_avg_color(255, 0, 0, 0);
+													cv::Mat syn_img = synthesis_opt(predictions_tmp, seg_rgb.size(), win_avg_color, bg_avg_color, false);
+													//cv::imwrite("../data/test.png", seg_rgb);
+													std::vector<double> evaluations = eval_accuracy(syn_img, seg_rgb);
+													double score_tmp = /*0.5 * evaluations[0] + */0.5 * evaluations[1] + 0.5 *evaluations[2];
+													//std::cout << "score_tmp is " << score_tmp << std::endl;
+													if (score_tmp > score_opt) {
+														score_opt = score_tmp;
+														for (int index = 0; index < predictions_tmp.size(); index++) {
+															predictions_opt[index] = predictions_tmp[index];
+														}
+													}
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+cv::Mat synthesis_opt(std::vector<double> predictions, cv::Size src_size, cv::Scalar win_color, cv::Scalar bg_color, bool bDebug) {
+	int height = src_size.height;
+	int width = src_size.width;
+	int thickness = -1;
+	cv::Mat syn_img(height, width, CV_8UC3, bg_color);
+	if (predictions.size() == 9) {
+		int NR = predictions[0];
+		int NC = predictions[1];
+		int NG = predictions[2];
+		double ratioWidth = predictions[3];
+		double ratioHeight = predictions[4];
+		double margin_t = predictions[5];
+		double margin_b = predictions[6];
+		double margin_l = predictions[7];
+		double margin_r = predictions[8];
+		int height_valid = height - margin_t * height - margin_b * height;
+		int width_valid = width - margin_l * width - margin_r * width;
+		double FH = height_valid * 1.0 / NR;
+		double FW = width_valid * 1.0 / NC;
+		double WH = FH * ratioHeight;
+		double WW = FW * ratioWidth;
+		if (NC > 1)
+			FW = WW + (width_valid - WW * NC) / (NC - 1);
+		if (NR > 1)
+			FH = WH + (height_valid - WH * NR) / (NR - 1);
+		// draw facade image
+		for (int i = 0; i < NR; ++i) {
+			for (int j = 0; j < NC; ++j) {
+				float x1 = FW * j + margin_l * width;
+				float y1 = FH * i + margin_t * height;
+				float x2 = x1 + WW;
+				float y2 = y1 + WH;
+				cv::rectangle(syn_img, cv::Point(std::round(x1), std::round(y1)), cv::Point(std::round(x2), std::round(y2)), win_color, thickness);
+			}
+		}
+	}
+	if (predictions.size() == 13) {
+		int NR = predictions[0];
+		int NC = predictions[1];
+		int NG = predictions[2];
+		int ND = predictions[3];
+		double ratioWidth = predictions[4];
+		double ratioHeight = predictions[5];
+		double ratioDWidth = predictions[6];
+		double ratioDHeight = predictions[7];
+		double margin_t = predictions[8];
+		double margin_b = predictions[9];
+		double margin_l = predictions[10];
+		double margin_r = predictions[11];
+		double margin_d = predictions[12];
+
+		int width_valid = width - margin_l * width - margin_r * width;
+		double DFW = width_valid * 1.0 / ND;
+		double DFH = height * ratioDHeight;
+		double DW = DFW * ratioDWidth;
+		double DH = height * ratioDHeight;
+		if (ND > 1)
+			DFW = DW + (width_valid - DW * ND) / (ND - 1);
+		int height_valid = height - margin_t * height - margin_b * height - margin_d * height - DFH;
+		double FH = height_valid * 1.0 / NR;
+		double FW = width_valid * 1.0 / NC;
+		double WH = FH * ratioHeight;
+		double WW = FW * ratioWidth;
+		if (NC > 1)
+			FW = WW + (width_valid - WW * NC) / (NC - 1);
+		if (NR > 1)
+			FH = WH + (height_valid - WH * NR) / (NR - 1);
+		// windows
+		for (int i = 0; i < NR; ++i) {
+			for (int j = 0; j < NC; ++j) {
+				float x1 = FW * j + margin_l * width;;
+				float y1 = FH * i + margin_t * height;
+				float x2 = x1 + WW;
+				float y2 = y1 + WH;
+				cv::rectangle(syn_img, cv::Point(std::round(x1), std::round(y1)), cv::Point(std::round(x2), std::round(y2)), win_color, thickness);
+			}
+		}
+		// doors
+		for (int i = 0; i < ND; i++) {
+			float x1 = DFW * i + margin_l * width;
+			float y1 = height - DH - margin_b * height;
+			float x2 = x1 + DW;
+			float y2 = y1 + DH;
+			cv::rectangle(syn_img, cv::Point(std::round(x1), std::round(y1)), cv::Point(std::round(x2), std::round(y2)), win_color, thickness);
+		}
+
+	}
+	if (bDebug)
+		cv::imwrite("../data/opt.png", syn_img);
+	return syn_img;
+}
+
+std::vector<double> eval_accuracy(const cv::Mat& seg_img, const cv::Mat& gt_img) {
+	int gt_p = 0;
+	int seg_tp = 0;
+	int seg_fn = 0;
+	int gt_n = 0;
+	int seg_tn = 0;
+	int seg_fp = 0;
+	for (int i = 0; i < gt_img.size().height; i++) {
+		for (int j = 0; j < gt_img.size().width; j++) {
+			// wall
+			if (gt_img.at<cv::Vec3b>(i, j)[0] == 0 && gt_img.at<cv::Vec3b>(i, j)[1] == 0 && gt_img.at<cv::Vec3b>(i, j)[2] == 255) {
+				gt_p++;
+				if (seg_img.at<cv::Vec3b>(i, j)[0] == 0 && seg_img.at<cv::Vec3b>(i, j)[1] == 0 && seg_img.at<cv::Vec3b>(i, j)[2] == 255) {
+					seg_tp++;
+				}
+				else
+					seg_fn++;
+			}
+			else {// non-wall
+				gt_n++;
+				if (seg_img.at<cv::Vec3b>(i, j)[0] == 255 && seg_img.at<cv::Vec3b>(i, j)[1] == 0 && seg_img.at<cv::Vec3b>(i, j)[2] == 0) {
+					seg_tn++;
+				}
+				else
+					seg_fp++;
+			}
+		}
+	}
+	// return pixel accuracy and class accuracy
+	std::vector<double> eval_metrix;
+	// accuracy 
+	eval_metrix.push_back(1.0 * (seg_tp + seg_tn) / (gt_p + gt_n));
+	// precision
+	double precision = 1.0 * seg_tp / (seg_tp + seg_fp);
+	// recall
+	double recall = 1.0 * seg_tp / (seg_tp + seg_fn);
+	eval_metrix.push_back(precision);
+	eval_metrix.push_back(recall);
+	/*std::cout << "P = " << gt_p << std::endl;
+	std::cout << "N = " << gt_n << std::endl;
+	std::cout << "TP = " << seg_tp << std::endl;
+	std::cout << "FN = " << seg_fn << std::endl;
+	std::cout << "TN = " << seg_tn << std::endl;
+	std::cout << "FP = " << seg_fp << std::endl;*/
+	return eval_metrix;
 }

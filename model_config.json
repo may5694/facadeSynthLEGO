@@ -66,6 +66,7 @@
 	"dnnsInFolder":"../dnnsIn",
 	"dnnsOutFolder":"../dnnsOut",
 	"debug":false,
+	"opt":true,
 	"defaultSize":[224, 224],
 	"paddingSize":[5, 5],
 	"segImageSize":[256, 256],

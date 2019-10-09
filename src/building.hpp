@@ -125,6 +125,7 @@ struct ModelInfo {
 	std::string dilatesFolder;
 	std::string alignsFolder;
 	bool debug;
+	bool bOpt;
 	std::vector<double> defaultSize;
 	std::vector<double> paddingSize;
 	std::vector<double> targetChipSize;

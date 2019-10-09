@@ -1402,6 +1402,7 @@ void readModeljson(std::string modeljson, ModelInfo& mi) {
 	mi.seg_module->to(at::kCUDA);
 	assert(mi.seg_module != nullptr);
 	mi.debug = util::readBoolValue(docModel, "debug", false);
+	mi.bOpt = util::readBoolValue(docModel, "opt", false);
 	rapidjson::Value& grammars = docModel["grammars"];
 	// classifier
 	rapidjson::Value& grammar_classifier = grammars["classifier"];
