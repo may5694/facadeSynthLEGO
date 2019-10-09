@@ -22,7 +22,7 @@ void dn_predict(FacadeInfo& fi, const ModelInfo& mi, std::string dn_path) {
 	}
 }
 
-cv::Mat pix2pix_seg(cv::Mat& src_img, ModelInfo& mi) {
+cv::Mat pix2pix_seg(cv::Mat src_img, const ModelInfo& mi) {
 	cv::Scalar bg_color(255, 255, 255); // white back ground
 	cv::Scalar window_color(0, 0, 0); // black for windows
 	if (src_img.channels() == 4) // ensure there're 3 channels

@@ -27,7 +27,7 @@ struct ChipInfo {
 };
 
 void dn_predict(FacadeInfo& fi, const ModelInfo& mi, std::string debugPath);
-cv::Mat pix2pix_seg(cv::Mat& src_img, ModelInfo& mi);
+cv::Mat pix2pix_seg(cv::Mat src_img, const ModelInfo& mi);
 
 /**** helper functions *****/
 int reject(cv::Mat src_img, std::vector<double> facadeSize, std::vector<double> targetSize, double score, bool bDebug);

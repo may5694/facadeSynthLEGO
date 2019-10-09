@@ -15,8 +15,9 @@ struct Options {
 	set<string> clusters;	// Which clusters to process
 	bool debugOut;			// Whether to output debug info
 	fs::path debugDir;		// Directory for debug output
+	bool doSeg;				// Segment facades instead of synth
 
-	Options(): debugOut(false) {}
+	Options(): debugOut(false), doSeg(false) {}
 };
 
 // Functions
@@ -43,7 +44,10 @@ int main(int argc, char** argv) {
 
 			cout << "Cluster: " << cluster << endl;
 
-			genFacadeModel(inputMetaPath, outputMetaPath, mi, debugPath);
+			if (opts.doSeg)
+				genSegModel(inputMetaPath, outputMetaPath, mi, debugPath);
+			else
+				genFacadeModel(inputMetaPath, outputMetaPath, mi, debugPath);
 		}
 
 	} catch (const exception& e) {
@@ -72,6 +76,10 @@ Options readArgs(int argc, char** argv) {
 			// Debug directory
 			if (!opts.rootDir.empty())
 				opts.debugDir = fs::path("output") / opts.rootDir.filename();
+
+		// Segment facades instead of synth
+		} else if (string(argv[a]) == "--seg") {
+			opts.doSeg = true;
 
 		// First non-option argument is the root directory
 		} else if (opts.rootDir.empty()) {

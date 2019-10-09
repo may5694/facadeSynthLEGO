@@ -1033,6 +1033,53 @@ void Building::synthFacades() {
 	}
 }
 
+// Segment each facade and produce an output model
+void Building::segmentFacades() {
+	if (!debugOut) return;
+
+	// Copy the atlas
+	cv::Mat segAtlasImg = atlasImg.clone();
+
+	// Iterate over all facades
+	for (auto& fi : facadeInfo) {
+		auto& fp = fi.second;
+
+		// Skip roofs
+		if (fp.roof) continue;
+
+		// Copy facade image and get largest inscribed rectangle
+		cv::Mat remFacadeImg = fp.facadeImg.clone();
+		cv::Rect lrect = findLargestRectangle(remFacadeImg);
+
+		// Repeatedly segment until largest rect is too small
+		while (lrect.width >= 5 && lrect.height >= 5) {
+			// Segment largest rectangular region
+			cv::Mat segImg = pix2pix_seg(fp.facadeImg(lrect), mi);
+			// Copy segmented image to atlas texture
+			segImg.copyTo(segAtlasImg(fp.atlasBB_px)(lrect));
+			// Remove segmented rectangle from remaining facade
+			remFacadeImg(lrect).setTo(cv::Scalar::all(0));
+			// Get next largest rectangle
+			lrect = findLargestRectangle(remFacadeImg);
+		}
+	}
+
+	// Copy textured obj to segmented obj
+	fs::path projModelPath = debugDir / "model" /
+		(debugDir.filename().string() + "_projtex.obj");
+	fs::path segModelPath = debugDir / "model" /
+		(debugDir.filename().string() + "_seg.obj");
+	if (fs::exists(projModelPath))
+		copyObj(projModelPath, segModelPath);
+
+	// Save atlas texture
+	fs::path modelDir = debugDir / "model";
+	if (!fs::exists(modelDir))
+		fs::create_directory(modelDir);
+	fs::path texPath = modelDir / (debugDir.filename().string() + "_seg.png");
+	cv::imwrite(texPath.string(), segAtlasImg);
+}
+
 void Building::outputMetadata() {
 	// Do nothing if no debug output
 	if (!debugOut) return;
@@ -1476,6 +1523,20 @@ void genFacadeModel(const string& model_metadata_path,
 
 	// Output debug metadata
 	b.outputMetadata();
+}
+
+// Generate segmented facade model
+void genSegModel(const string& model_metadata_path,
+	const string& output_model_metadata_path,
+	ModelInfo& mi,
+	fs::path debugPath) {
+
+	// Load the building data
+	Building b(mi);
+	b.load(fs::path(model_metadata_path), fs::path(model_metadata_path), debugPath);
+
+	// Segment all facades
+	b.segmentFacades();
 }
 
 void readModeljson(std::string modeljson, ModelInfo& mi) {

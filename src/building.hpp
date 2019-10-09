@@ -15,6 +15,8 @@ struct ModelInfo;
 
 void genFacadeModel(const std::string &input_model_metadata_path, const std::string &,
                     ModelInfo& mi, fs::path debugPath = {});
+void genSegModel(const std::string& input_model_metadata_path, const std::string &,
+					ModelInfo& mi, fs::path debugPath = {});
 
 void readModeljson(std::string modeljson, ModelInfo& mi);
 
@@ -27,6 +29,7 @@ public:
 	void scoreFacades();
 	void estimParams();
 	void synthFacades();
+	void segmentFacades();
 
 	// Debug output
 	void outputMetadata();
