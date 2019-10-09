@@ -1681,9 +1681,13 @@ void opt_without_doors(cv::Mat& seg_rgb, std::vector<double>& predictions_opt, s
 							}
 						}
 					}
+std::cout << "-"; std::cout.flush();
 				}
+std::cout << "+"; std::cout.flush();
 			}
+std::cout << "|"; std::cout.flush();
 		}
+std::cout << "#"; std::cout.flush();
 	}
 }
 
@@ -1853,27 +1857,27 @@ std::vector<double> eval_accuracy(const cv::Mat& seg_img, const cv::Mat& gt_img)
 	int gt_n = 0;
 	int seg_tn = 0;
 	int seg_fp = 0;
-	for (int i = 0; i < gt_img.size().height; i++) {
-		for (int j = 0; j < gt_img.size().width; j++) {
-			// wall
-			if (gt_img.at<cv::Vec3b>(i, j)[0] == 0 && gt_img.at<cv::Vec3b>(i, j)[1] == 0 && gt_img.at<cv::Vec3b>(i, j)[2] == 255) {
-				gt_p++;
-				if (seg_img.at<cv::Vec3b>(i, j)[0] == 0 && seg_img.at<cv::Vec3b>(i, j)[1] == 0 && seg_img.at<cv::Vec3b>(i, j)[2] == 255) {
-					seg_tp++;
-				}
-				else
-					seg_fn++;
-			}
-			else {// non-wall
-				gt_n++;
-				if (seg_img.at<cv::Vec3b>(i, j)[0] == 255 && seg_img.at<cv::Vec3b>(i, j)[1] == 0 && seg_img.at<cv::Vec3b>(i, j)[2] == 0) {
-					seg_tn++;
-				}
-				else
-					seg_fp++;
-			}
-		}
-	}
+
+	assert(seg_img.channels() == 3 && gt_img.channels() == 3);
+	// Convert seg_img and gt_img into masks
+	cv::Mat seg_r(seg_img.size(), CV_8UC1);
+	cv::Mat seg_b(seg_img.size(), CV_8UC1);
+	cv::Mat gt_r(seg_img.size(), CV_8UC1);
+	cv::Mat gt_b(seg_img.size(), CV_8UC1);
+	cv::mixChannels(
+		std::vector<cv::Mat>{ seg_img, gt_img },
+		std::vector<cv::Mat>{ seg_r, seg_b, gt_r, gt_b },
+		std::vector<int>{ 0, 0,   2, 1,   3, 2,   5, 3 });
+	cv::Mat seg = (seg_r == 0) & (seg_b == 255);
+	cv::Mat gt = (gt_r == 0) & (gt_b == 255);
+
+	gt_p = cv::countNonZero(gt);
+	gt_n = cv::countNonZero(~gt);
+	seg_tp = cv::countNonZero(gt & seg);
+	seg_fn = cv::countNonZero(gt & ~seg);
+	seg_tn = cv::countNonZero(~gt & ~seg);
+	seg_fp = cv::countNonZero(~gt & seg);
+
 	// return pixel accuracy and class accuracy
 	std::vector<double> eval_metrix;
 	// accuracy 
